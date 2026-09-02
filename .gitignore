@@ -1,0 +1,35 @@
+# ── Dependencies ──────────────────────────────────────────────────────────────
+node_modules/
+
+# ── Build output ───────────────────────────────────────────────────────────────
+dist/
+build/
+out/
+
+# ── Logs ──────────────────────────────────────────────────────────────────────
+*.log
+hive_activity.log
+
+# ── Environment & secrets ─────────────────────────────────────────────────────
+.env
+.env.*
+*.pem
+
+# ── OS & editor noise ─────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# ── Electron build artifacts ──────────────────────────────────────────────────
+chess-democracy-electron/dist/
+chess-democracy-electron/dist-electron/
+chess-democracy-electron/release/
+chess-democracy-electron/ReactChessDemocracy/dist/
+
+# ── Vite / TypeScript cache ───────────────────────────────────────────────────
+*.tsbuildinfo
+.vite/
+
+# ── Test coverage ─────────────────────────────────────────────────────────────
+coverage/

@@ -1,0 +1,140 @@
+/* BootScreen.css */
+
+.boot-screen {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    gap: 2rem;
+    padding: 2rem;
+    background: radial-gradient(ellipse at 50% 0%, #1e1b3a 0%, var(--bg) 70%);
+}
+
+/* ── Header ──────────────────────────────────────────────────────────────── */
+
+.boot-header { text-align: center; }
+
+.boot-logo {
+    font-size: 4rem;
+    line-height: 1;
+    margin-bottom: 0.5rem;
+    filter: drop-shadow(0 0 24px #7c6af740);
+}
+
+.boot-header h1 {
+    font-size: 3rem;
+    background: linear-gradient(135deg, #fff 30%, var(--accent));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    margin-bottom: 0.4rem;
+}
+
+.boot-header p { color: var(--text-dim); font-size: 1rem; }
+
+/* ── Card ────────────────────────────────────────────────────────────────── */
+
+.boot-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 2rem 2.5rem;
+    width: 100%;
+    max-width: 520px;
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+}
+
+.boot-card h2 { font-size: 1.4rem; color: var(--text); }
+
+.boot-sub {
+    font-size: 0.875rem;
+    color: var(--text-dim);
+    line-height: 1.6;
+}
+
+/* ── Side picker ─────────────────────────────────────────────────────────── */
+
+.boot-sides {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+}
+
+.side-btn {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 1.5rem 1rem;
+    border-radius: 12px;
+    border: 2px solid transparent;
+    cursor: pointer;
+    transition: border-color 0.15s, transform 0.1s, box-shadow 0.15s;
+    font-family: inherit;
+}
+
+.side-btn:hover:not(:disabled) {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 24px #0006;
+}
+
+.side-btn:active:not(:disabled) { transform: translateY(0); }
+
+.side-btn:disabled { opacity: 0.45; cursor: not-allowed; transform: none; }
+
+.side-btn--white {
+    background: #f0d9b5;
+    color: #1a1a1a;
+}
+.side-btn--white:hover:not(:disabled) { border-color: #c9a97d; }
+
+.side-btn--black {
+    background: #2c2c2c;
+    color: #f0d9b5;
+    border: 2px solid #444;
+}
+.side-btn--black:hover:not(:disabled) { border-color: #888; }
+
+.side-icon  { font-size: 2.5rem; line-height: 1; }
+.side-label { font-size: 1.1rem; font-weight: 700; }
+.side-hint  { font-size: 0.75rem; opacity: 0.6; font-weight: 400; }
+
+.side-divider {
+    color: var(--text-dim);
+    font-size: 0.85rem;
+    font-weight: 600;
+    flex-shrink: 0;
+}
+
+/* ── Spinner inside button ───────────────────────────────────────────────── */
+
+.btn-spinner {
+    display: inline-block;
+    width: 2rem; height: 2rem;
+    border: 2px solid currentColor;
+    border-top-color: transparent;
+    border-radius: 50%;
+    animation: spin 0.7s linear infinite;
+    opacity: 0.6;
+}
+
+/* ── Error ───────────────────────────────────────────────────────────────── */
+
+.boot-error {
+    color: var(--danger);
+    font-size: 0.875rem;
+    font-weight: 500;
+}
+
+/* ── Footer ──────────────────────────────────────────────────────────────── */
+
+.boot-footer {
+    color: var(--text-dim);
+    font-size: 0.8rem;
+    opacity: 0.5;
+}

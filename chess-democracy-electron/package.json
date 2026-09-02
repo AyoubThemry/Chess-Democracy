@@ -1,0 +1,72 @@
+{
+  "name": "chess-hive-electron",
+  "version": "1.0.0",
+  "description": "Decentralised peer-to-peer chess — no server required",
+  "author": "Ayoub Themry",
+  "main": "dist/main.js",
+  "type": "commonjs",
+  "scripts": {
+    "install:all": "npm install && cd ReactChessDemocracy && npm install && cd ..",
+    "dev": "concurrently \"npm run dev:core\" \"npm run dev:react\" \"npm run dev:electron\"",
+    "dev:core": "cd ../chess-democracy-core && npm run build:watch",
+    "dev:react": "cd ./ReactChessDemocracy && npm run dev",
+    "dev:electron": "tsc && wait-on http://localhost:5173 && cross-env ELECTRON_DEV=true electron .",
+    "dev:p2": "wait-on http://localhost:5173 && cross-env ELECTRON_DEV=true CHESS_IDENTITY=%USERPROFILE%\\.chess-hive\\identity-p2.pem electron .",
+    "build": "tsc",
+    "build:core": "cd ../chess-democracy-core && npm run build",
+    "build:react": "cd ReactChessDemocracy && npm run build",
+    "build:release": "npm run build:core && npm run build:react && npm run build && npm run dist",
+    "start": "npm run build && electron .",
+    "kill": "powershell -Command \"Stop-Process -Name 'Chess Democracy' -Force -ErrorAction SilentlyContinue; Start-Sleep -Seconds 2; Remove-Item -Recurse -Force release -ErrorAction SilentlyContinue\"",
+    "dist": "npm run kill && cross-env CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder"
+  },
+  "build": {
+    "appId": "com.chesshive.app",
+    "productName": "Chess Democracy",
+    "forceCodeSigning": false,
+    "icon": "build/icon",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**",
+      "src/**"
+    ],
+    "extraResources": [
+      {
+        "from": "ReactChessDemocracy/dist",
+        "to": "ReactChessDemocracy/dist",
+        "filter": ["**/*"]
+      },
+      {
+        "from": "../chess-democracy-core",
+        "to": "chess-democracy-core",
+        "filter": ["dist/**", "package.json", "node_modules/**"]
+      }
+    ],
+    "win": {
+      "target": "dir"
+    },
+    "mac": {
+      "target": "dmg",
+      "category": "public.app-category.games"
+    },
+    "linux": {
+      "target": "AppImage",
+      "category": "Game"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    }
+  },
+  "devDependencies": {
+    "@types/node": "^25.2.2",
+    "concurrently": "^9.2.1",
+    "cross-env": "^10.1.0",
+    "electron": "^40.2.1",
+    "electron-builder": "^25.1.8",
+    "typescript": "^5.9.3",
+    "wait-on": "^9.0.3"
+  }
+}

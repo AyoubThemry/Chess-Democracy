@@ -1,0 +1,471 @@
+/* GameScreen.css */
+
+.game-screen {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    overflow: hidden;
+    background: var(--bg);
+}
+
+/* Header */
+
+.game-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.75rem 1.5rem;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+    flex-shrink: 0;
+}
+
+.game-logo {
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: var(--text);
+}
+
+.turn-indicator {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: var(--text);
+}
+
+.turn-dot {
+    width: 10px; height: 10px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+.turn-dot--white { background: #f0d9b5; box-shadow: 0 0 6px #f0d9b5aa; }
+.turn-dot--black { background: #888; }
+
+.resign-btn {
+    font-size: 0.85rem;
+    padding: 0.4rem 1rem;
+}
+
+.offer-draw-btn {
+    font-size: 0.85rem;
+    padding: 0.4rem 1rem;
+}
+
+.draw-offer-banner {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.6rem 1.5rem;
+    background: var(--accent-faint, rgba(184,137,10,.12));
+    border-bottom: 1px solid var(--accent, #B8890A);
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: var(--text);
+    flex-shrink: 0;
+    animation: slide-in 0.2s ease;
+}
+
+.draw-accept-btn, .draw-decline-btn {
+    font-size: 0.8rem;
+    padding: 0.3rem 0.8rem;
+}
+
+@keyframes slide-in {
+    from { opacity: 0; transform: translateY(-8px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+
+.resign-vote-banner {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.55rem 1.5rem;
+    background: rgba(220, 60, 60, 0.12);
+    border-bottom: 1px solid rgba(220, 60, 60, 0.4);
+    font-size: 0.88rem;
+    color: var(--text);
+    flex-shrink: 0;
+    animation: slide-in 0.2s ease;
+}
+
+.resign-vote-label {
+    font-weight: 600;
+}
+
+.resign-vote-threshold {
+    opacity: 0.65;
+    font-size: 0.82rem;
+}
+
+/* ── Body ────────────────────────────────────────────────────────────────── */
+
+.game-body {
+    flex: 1;
+    display: flex;
+    align-items: stretch;
+    overflow: hidden;
+    gap: 0;
+}
+
+/* ── Board ───────────────────────────────────────────────────────────────── */
+
+.board-wrap {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1.5rem;
+    position: relative;
+    min-width: 0;
+}
+
+/* Size the board grid to fit the available space.
+   Scope to [id$="-board"] so the DragOverlay's PositionedOverlay (also a
+   direct child of .board-wrap via DndContext's Fragment) is NOT matched —
+   that was causing the dragged piece to render at full-board size. */
+.board-wrap > div[id$="-board"] {
+    width: min(calc(100vh - 120px), calc(100vw - 340px)) !important;
+    height: min(calc(100vh - 120px), calc(100vw - 340px)) !important;
+}
+
+.board-wrap--busy { pointer-events: none; }
+
+.board-overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #0006;
+    border-radius: 8px;
+}
+
+/* ── Side panel ──────────────────────────────────────────────────────────── */
+
+.game-panel {
+    width: 260px;
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    border-left: 1px solid var(--border);
+    background: var(--surface);
+    overflow: hidden;
+}
+
+.panel-section {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    border-top: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
+    overflow: hidden;
+}
+
+.panel-title {
+    font-size: 0.75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--text-dim);
+    padding: 0.65rem 1rem;
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+}
+
+/* ── Player strips ───────────────────────────────────────────────────────── */
+
+.player-strip {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    padding: 0.85rem 1rem;
+    font-size: 0.82rem;
+    color: var(--text-dim);
+    position: relative;
+    flex-shrink: 0;
+    transition: background 0.15s;
+}
+
+.player-strip--active {
+    background: #7c6af710;
+    color: var(--text);
+}
+
+.player-icon { font-size: 1.1rem; }
+
+.player-label {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.turn-pip {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--accent);
+    box-shadow: 0 0 6px var(--accent);
+    flex-shrink: 0;
+    animation: blink 1.2s ease-in-out infinite;
+}
+@keyframes blink { 0%,100% { opacity: 1; } 50% { opacity: 0.3; } }
+
+/* ── Move history ────────────────────────────────────────────────────────── */
+
+.move-history {
+    flex: 1;
+    overflow-y: auto;
+    padding: 0.5rem 0;
+    scrollbar-width: thin;
+    scrollbar-color: var(--border) transparent;
+}
+
+.move-history--empty {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.move-history--empty p {
+    font-size: 0.8rem;
+    color: var(--text-dim);
+}
+
+.move-pair {
+    display: grid;
+    grid-template-columns: 28px 1fr 1fr;
+    align-items: center;
+    padding: 0.25rem 0.75rem;
+    font-size: 0.82rem;
+    gap: 0.25rem;
+}
+
+.move-pair:hover { background: var(--bg); }
+
+.move-num { color: var(--text-dim); font-size: 0.75rem; }
+
+.move-cell {
+    padding: 0.15rem 0.4rem;
+    border-radius: 4px;
+    font-family: 'Courier New', monospace;
+    font-weight: 600;
+    cursor: default;
+}
+
+.move-cell--white { color: #c9a97d; }
+.move-cell--black { color: #8b8fa8; }
+
+/* ── Vote panel ──────────────────────────────────────────────────────────── */
+
+.vote-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+    padding: 0.8rem 1rem;
+    background: var(--surface);
+    border-top: 1px solid var(--border);
+    font-size: 0.85rem;
+    flex-shrink: 0;
+}
+
+.revote-banner {
+    padding: 0.4rem 0.7rem;
+    background: #e0a84b18;
+    border: 1px solid #e0a84b50;
+    border-radius: 6px;
+    color: #e0a84b;
+    font-weight: 600;
+    font-size: 0.8rem;
+}
+
+.vote-timer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.vote-timer-label {
+    font-size: 0.78rem;
+    color: var(--text-dim);
+    font-weight: 500;
+}
+
+.vote-timer-value {
+    font-size: 1rem;
+    font-weight: 700;
+    color: var(--accent);
+    font-variant-numeric: tabular-nums;
+}
+
+.vote-timer-value--urgent { color: #e05050; }
+
+.vote-hint {
+    font-size: 0.78rem;
+    color: var(--text-dim);
+    margin: 0;
+}
+
+.my-vote {
+    font-size: 0.82rem;
+    color: #4caf50;
+    font-weight: 600;
+}
+
+.votes-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+}
+
+.votes-list-title {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.votes-empty { font-size: 0.78rem; color: var(--text-dim); margin: 0; }
+
+.vote-entry {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 0.8rem;
+    padding: 0.2rem 0;
+    border-top: 1px solid var(--border);
+}
+
+.voter-id {
+    font-family: monospace;
+    font-size: 0.77rem;
+    color: var(--text-dim);
+}
+
+.voted-move {
+    font-family: monospace;
+    font-weight: 700;
+    color: var(--text);
+}
+
+/* ── Vote action ─────────────────────────────────────────────────────────── */
+
+.vote-action {
+    padding: 0.5rem 1rem;
+    flex-shrink: 0;
+}
+
+.cast-vote-btn {
+    width: 100%;
+    padding: 0.7rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    border-radius: 8px;
+}
+
+.vote-select-hint {
+    font-size: 0.8rem;
+    color: var(--text-dim);
+    text-align: center;
+    margin: 0;
+}
+
+/* ── Promotion picker ──────────────────────────────────────────────────────── */
+
+.promo-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.6);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 200;
+}
+
+.promo-picker {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 1.5rem;
+    min-width: 220px;
+    text-align: center;
+}
+
+.promo-title {
+    font-size: 1rem;
+    font-weight: 600;
+    margin: 0 0 1rem;
+}
+
+.promo-choices {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    margin-bottom: 0.75rem;
+}
+
+.promo-btn {
+    padding: 0.6rem 1rem;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--bg);
+    color: var(--text);
+    cursor: pointer;
+    font-size: 1rem;
+    transition: background 0.15s;
+}
+.promo-btn:hover { background: var(--primary); color: #fff; }
+
+.promo-cancel {
+    font-size: 0.8rem;
+    color: var(--text-dim);
+    background: none;
+    border: none;
+    cursor: pointer;
+}
+
+/* ── End-game overlay ──────────────────────────────────────────────────────── */
+
+.end-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.65);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 100;
+}
+
+.end-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 2rem 2.5rem;
+    text-align: center;
+    min-width: 260px;
+}
+
+.end-headline {
+    font-size: 2rem;
+    font-weight: 800;
+    margin-bottom: 0.5rem;
+}
+.end-headline--win  { color: #4ade80; }
+.end-headline--loss { color: #f87171; }
+.end-headline--draw { color: var(--text-dim); }
+
+.end-reason {
+    font-size: 0.9rem;
+    color: var(--text-dim);
+    margin-bottom: 1.5rem;
+}
+
+.end-rematch-btn {
+    padding: 0.7rem 2rem;
+    font-size: 1rem;
+    border-radius: 8px;
+}

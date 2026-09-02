@@ -1,0 +1,122 @@
+/* GameOverScreen.css */
+
+.gameover-screen {
+    display: flex;
+    flex-direction: column;
+    min-height: 100vh;
+    background: var(--bg);
+}
+
+.gameover-header {
+    padding: 1rem 1.5rem;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+    font-size: 1.1rem;
+    font-weight: 700;
+}
+
+.gameover-main {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1.75rem;
+    padding: 2rem 1.5rem;
+    max-width: 480px;
+    margin: 0 auto;
+    width: 100%;
+}
+
+/* ── Result banner ───────────────────────────────────────────────────────── */
+
+.result-banner {
+    width: 100%;
+    border-radius: 16px;
+    padding: 1.75rem;
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.4rem;
+    border: 1px solid transparent;
+}
+
+.result--win  {
+    background: linear-gradient(135deg, #1a2a1a, #0f1a0f);
+    border-color: #56c59640;
+}
+.result--loss {
+    background: linear-gradient(135deg, #2a1a1a, #1a0f0f);
+    border-color: #e05c5c40;
+}
+.result--draw {
+    background: linear-gradient(135deg, #1a1a2a, #0f0f1a);
+    border-color: #7c6af740;
+}
+
+.result-icon     { font-size: 3rem; line-height: 1; }
+.result-headline { font-size: 2rem; font-weight: 800; color: var(--text); }
+.result-sub      { font-size: 0.95rem; color: var(--text-dim); }
+
+/* ── Final board ─────────────────────────────────────────────────────────── */
+
+.gameover-board {
+    width: 100%;
+    max-width: 340px;
+}
+
+.gameover-board > div {
+    width: 100% !important;
+    height: 100% !important;
+    aspect-ratio: 1;
+}
+
+/* ── Stats ───────────────────────────────────────────────────────────────── */
+
+.gameover-stats {
+    width: 100%;
+    display: flex;
+    gap: 0;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+}
+
+.stat {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 0.9rem 0.5rem;
+    gap: 0.25rem;
+    border-right: 1px solid var(--border);
+}
+.stat:last-child { border-right: none; }
+
+.stat-label {
+    font-size: 0.7rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--text-dim);
+}
+
+.stat-value {
+    font-size: 0.95rem;
+    font-weight: 700;
+    color: var(--text);
+}
+
+.stat-value.mono { font-family: monospace; font-size: 0.82rem; }
+
+/* ── Actions ─────────────────────────────────────────────────────────────── */
+
+.gameover-actions { width: 100%; }
+
+.play-again-btn {
+    width: 100%;
+    padding: 0.9rem;
+    font-size: 1rem;
+    border-radius: 10px;
+}

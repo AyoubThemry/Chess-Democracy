@@ -1,0 +1,17 @@
+/* Baseline reset — App.css owns the design tokens and all other styles */
+*, *::before, *::after { box-sizing: border-box; }
+
+html, body, #root {
+    height: 100%;
+    margin: 0;
+    padding: 0;
+}
+
+body {
+    display: block;
+    overflow: hidden;
+    font-synthesis: none;
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+}
