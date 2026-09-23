@@ -1,0 +1,13 @@
+{
+  "name": "chess-democracy",
+  "version": "1.0.0",
+  "description": "Peer-to-peer multiplayer chess with democratic move voting",
+  "author": "Ayoub Themry",
+  "license": "MIT",
+  "private": true,
+  "scripts": {
+    "setup": "npm --prefix chess-democracy-core install && npm --prefix chess-democracy-core run build && npm --prefix chess-democracy-electron install && npm --prefix chess-democracy-electron/ReactChessDemocracy install",
+    "test": "npm --prefix chess-democracy-core test && npm --prefix chess-democracy-electron/ReactChessDemocracy test",
+    "build": "npm --prefix chess-democracy-electron run build:release"
+  }
+}

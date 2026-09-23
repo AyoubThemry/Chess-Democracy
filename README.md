@@ -6,6 +6,14 @@
 
 A peer-to-peer multiplayer chess client built with Electron + React + TypeScript. Players connect directly over LAN/Wi-Fi using mDNS discovery — no server required. Multiple players can join the same side and vote on moves collectively. The project strives for a global working Peer 2 Peer version.
 
+## How a game works
+
+Open the app on two or more machines on the same network. They find each other over mDNS with no configuration, no lobby server, and no accounts.
+
+Pick a side. Any number of players can join the same one. When it is your side's turn a voting window opens (30s by default) and everyone on that side votes for a legal move. The plurality winner is played. A two-way tie breaks deterministically so every node commits the same move; a three-way split with no majority reopens the window.
+
+Resigning works the same way. No single player can give up the game on their own: enough of your connected teammates have to agree first.
+
 ## Architecture
 
 ```
@@ -69,26 +77,30 @@ Each voting window has a hard cap (`MOVE_TIMEOUT_MS`, default 120 s). If no tall
 ## Setup
 
 ```bash
-# 1 — Clone
 git clone https://github.com/AyoubThemry/Chess-Democracy.git
 cd Chess-Democracy
+npm run setup
+```
 
-# 2 — Install core dependencies
+`setup` installs all three package trees and builds the core, which the Electron
+shell needs before it can import anything.
+
+<details>
+<summary>Doing it by hand</summary>
+
+```bash
 cd chess-democracy-core
 npm install
+npm run build          # must run before the Electron shell can import core
 
-# 3 — Build core (must be done before the Electron shell can import it)
-npm run build
-
-# 4 — Install Electron shell dependencies
 cd ../chess-democracy-electron
 npm install
 
-# 5 — Install React renderer dependencies
 cd ReactChessDemocracy
 npm install
-cd ..
 ```
+
+</details>
 
 ---
 
