@@ -14,6 +14,7 @@ export class LocalNetworkController extends BaseNetworkController {
     private publisher?:    PublisherService;
     private discoverer?:   DiscoveryService;
     private ghostInterval?: NodeJS.Timeout;
+    private pingInterval?:  NodeJS.Timeout;
 
     constructor(
         private readonly serviceName: string,
@@ -42,17 +43,36 @@ export class LocalNetworkController extends BaseNetworkController {
 
         this.discoverer.start(this.serviceName);
 
+        // Ghost detection reads peer.lastSeen, which only advances when a peer
+        // sends something. Without this heartbeat an idle lobby would drop
+        // every peer once GHOST_TIMEOUT_MS passed with nobody clicking.
+        // Sent at a third of the timeout so two can be lost before a peer is
+        // wrongly declared dead.
+        this.pingInterval = setInterval(() => {
+            MessageService.broadcast(
+                { type: 'ping' },
+                this.getAllPeers(),
+                this.identity,
+            );
+        }, NETWORK_CONFIG.GHOST_TIMEOUT_MS / 3);
+        this.pingInterval.unref();
+
         this.ghostInterval = setInterval(() => {
             this.removeGhosts(
                 this.getAllPeers(),
                 (count) => this.adjustAlivePeersCount("-", count),
             );
-        }, NETWORK_CONFIG.GHOST_TIMEOUT_MS / 10);
+        }, NETWORK_CONFIG.GHOST_TIMEOUT_MS / 3);
+        this.ghostInterval.unref();
     }
 
     public stop(): void {
         this.publisher?.stop();
         this.discoverer?.stop();
+        if (this.pingInterval) {
+            clearInterval(this.pingInterval);
+            this.pingInterval = undefined;
+        }
         if (this.ghostInterval) {
             clearInterval(this.ghostInterval);
             this.ghostInterval = undefined;

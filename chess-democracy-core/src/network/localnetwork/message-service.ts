@@ -84,7 +84,8 @@ type OutboundMessage =
   | { type: 'vote';            turnIndex: number; move: string; timestamp: number }
   | { type: 'draw_offer' }
   | { type: 'draw_response';   accepted: boolean }
-  | { type: 'resign_vote' };
+  | { type: 'resign_vote' }
+  | { type: 'ping' };
 
 // ---------------------------------------------------------------------------
 // MessageService
@@ -223,6 +224,13 @@ export class MessageService {
             peer.touch();
 
             // 5. Dispatch — network messages
+
+            // A ping carries nothing. Its only job is the touch() above, which
+            // keeps an idle peer from being swept as a ghost.
+            if (message.type === "ping") {
+                return "ping";
+            }
+
             if (message.type === "ready") {
                 peer.ready = true;
                 peer.team  = message.team ?? null;
