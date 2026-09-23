@@ -186,16 +186,26 @@ describe('MessageService.HandleMessage', () => {
     });
 });
 
-describe('MessageService.SendReady', () => {
+describe('MessageService.broadcast', () => {
     const me   = getOrCreateIdentity();
     const them = getOrCreateIdentity();
+
+    /** Captures the raw packet handed to socket.send. */
+    function capturingSocket(): { socket: WebSocket; sent: () => string } {
+        const socket = makeSocket();
+        let sentPacket = '';
+        (socket.send as ReturnType<typeof vi.fn>).mockImplementation((data: string) => {
+            sentPacket = data;
+        });
+        return { socket, sent: () => sentPacket };
+    }
 
     it('sends a packet to alive peers', () => {
         const socket = makeSocket();
         const peer   = makePeer(them.publicKey, socket);
         const peers  = new Map([[them.publicKey, peer]]);
 
-        MessageService.SendReady('white', peers, me.publicKey, me.privateKey);
+        MessageService.broadcast({ type: 'ready', team: 'white' }, peers, me);
         expect(socket.send).toHaveBeenCalledOnce();
     });
 
@@ -205,24 +215,74 @@ describe('MessageService.SendReady', () => {
         peer.status  = PeerStatus.Dead;
         const peers  = new Map([[them.publicKey, peer]]);
 
-        MessageService.SendReady('black', peers, me.publicKey, me.privateKey);
+        MessageService.broadcast({ type: 'ready', team: 'black' }, peers, me);
         expect(socket.send).not.toHaveBeenCalled();
     });
 
     it('sends a packet signed with our private key (verifiable)', () => {
-        const socket = makeSocket();
-        // Capture the sent packet to inspect it
-        let sentPacket = '';
-        (socket.send as ReturnType<typeof vi.fn>).mockImplementation((data: string) => {
-            sentPacket = data;
-        });
+        const { socket, sent } = capturingSocket();
+        const peers = new Map([[them.publicKey, makePeer(them.publicKey, socket)]]);
 
-        const peer  = makePeer(them.publicKey, socket);
-        const peers = new Map([[them.publicKey, peer]]);
-        MessageService.SendReady('white', peers, me.publicKey, me.privateKey);
+        MessageService.broadcast({ type: 'ready', team: 'white' }, peers, me);
 
-        const parsed = JSON.parse(sentPacket);
-        const { payload, signature } = parsed;
+        const { payload, signature } = JSON.parse(sent());
         expect(verifySignature(JSON.stringify(payload), signature, me.publicKey)).toBe(true);
+    });
+
+    it('stamps the envelope fields and carries the message fields', () => {
+        const { socket, sent } = capturingSocket();
+        const peers = new Map([[them.publicKey, makePeer(them.publicKey, socket)]]);
+
+        MessageService.broadcast({ type: 'config_accept', version: 7 }, peers, me);
+
+        const { payload } = JSON.parse(sent());
+        expect(payload.key).toBe(me.publicKey);
+        expect(payload.type).toBe('config_accept');
+        expect(payload.version).toBe(7);
+        expect(typeof payload.nonce).toBe('string');
+        expect(typeof payload.timestamp).toBe('number');
+    });
+
+    it('keeps a caller-supplied timestamp instead of stamping wall time', () => {
+        const { socket, sent } = capturingSocket();
+        const peers = new Map([[them.publicKey, makePeer(them.publicKey, socket)]]);
+        const synchronized = 1_700_000_000_000;
+
+        MessageService.broadcast(
+            { type: 'vote', turnIndex: 3, move: 'e2e4', timestamp: synchronized },
+            peers, me,
+        );
+
+        const { payload } = JSON.parse(sent());
+        expect(payload.timestamp).toBe(synchronized);
+    });
+
+    it('filter narrows the audience without overriding the alive check', () => {
+        const whiteSocket = makeSocket();
+        const blackSocket = makeSocket();
+        const deadSocket  = makeSocket();
+
+        const whitePeer = makePeer('white-peer', whiteSocket);
+        const blackPeer = makePeer('black-peer', blackSocket);
+        const deadPeer  = makePeer('dead-peer',  deadSocket);
+        whitePeer.team = 'white';
+        blackPeer.team = 'black';
+        deadPeer.team  = 'white';
+        deadPeer.status = PeerStatus.Dead;
+
+        const peers = new Map([
+            ['white-peer', whitePeer],
+            ['black-peer', blackPeer],
+            ['dead-peer',  deadPeer],
+        ]);
+
+        MessageService.broadcast(
+            { type: 'resign_vote' }, peers, me,
+            p => p.team === 'white',
+        );
+
+        expect(whiteSocket.send).toHaveBeenCalledOnce();
+        expect(blackSocket.send).not.toHaveBeenCalled();
+        expect(deadSocket.send).not.toHaveBeenCalled();
     });
 });

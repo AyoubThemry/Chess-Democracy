@@ -75,42 +75,59 @@ export interface MessageCallbacks {
     onResignVote:     (senderKey: string) => void;
 }
 
+type OutboundMessage =
+  | { type: 'ready';           team: string }
+  | { type: 'unready' }
+  | { type: 'side_choice';     team: Team; request_id: string; client_time: number }
+  | { type: 'config_proposal'; config: GameConfig; version: number }
+  | { type: 'config_accept';   version: number }
+  | { type: 'vote';            turnIndex: number; move: string; timestamp: number }
+  | { type: 'draw_offer' }
+  | { type: 'draw_response';   accepted: boolean }
+  | { type: 'resign_vote' };
+
 // ---------------------------------------------------------------------------
 // MessageService
 // ---------------------------------------------------------------------------
 export class MessageService {
 
-    public static SendReady(
-        team:         string,
-        peers:        Map<string, Peer>,
-        myPublicKey:  string,
-        myPrivateKey: string,
+    /**
+     * Builds a signed packet for `msg` and sends it to every alive peer.
+     *
+     * The helper owns only the envelope fields (`key`, `timestamp`, `nonce`);
+     * everything else comes from `msg`, so it never branches on message type.
+     * `filter` narrows an already-live set — it can never widen it.
+     */
+    public static broadcast(
+        msg:     OutboundMessage,
+        peers:   Map<string, Peer>,
+        keys:    { publicKey: string; privateKey: string },
+        filter?: (peer: Peer) => boolean,
     ): void {
         const payload = {
-            key:       myPublicKey,
-            type:      "ready",
-            team,
-            timestamp: Date.now(),
+            key:       keys.publicKey,
+            ...msg,
+            // `vote` carries the sender's synchronized clock; everything else
+            // stamps wall time here.
+            timestamp: 'timestamp' in msg ? msg.timestamp : Date.now(),
             nonce:     randomUUID(),
         };
-        const message   = JSON.stringify(payload);
-        const signature = signMessage(message, myPrivateKey);
+        const signature = signMessage(JSON.stringify(payload), keys.privateKey);
         const packet    = JSON.stringify({ payload, signature });
 
         for (const [peerId, peer] of peers) {
-            if (peer.status === PeerStatus.Alive) {
-                try {
-                    peer.socket.send(packet);
-                } catch (err) {
-                    logger.error(`Failed to send ready to peer`, {
-                        peer:    peerId.slice(0, 8),
-                        message: err instanceof Error ? err.message : String(err),
-                    });
-                }
+            if (peer.status !== PeerStatus.Alive) continue;
+            if (filter && !filter(peer))          continue;
+            try {
+                peer.socket.send(packet);
+            } catch (err) {
+                logger.error(`Failed to send ${msg.type}`, {
+                    peer:    peerId.slice(0, 8),
+                    message: err instanceof Error ? err.message : String(err),
+                });
             }
         }
     }
-
     public static SendTimeSyncRequest(
         targetPeer:   Peer,
         myPublicKey:  string,
@@ -137,241 +154,6 @@ export class MessageService {
             peer: targetPeer.peerPublicNodeId.slice(0, 8),
         });
         return "";
-    }
-    public static sendSideChoice(team:Team,peers:Map<string, Peer>,myPublicKey:string,myPrivateKey: string):void{
-        const requestId = randomUUID();
-        const payload   = {
-            key:         myPublicKey,
-            type:        "side_choice",
-            team:team,
-            request_id:  requestId,
-            client_time: Date.now(),
-            timestamp:   Date.now(),
-            nonce:       randomUUID(),
-        };
-
-        const message   = JSON.stringify(payload);
-        const signature = signMessage(message, myPrivateKey);
-        const packet    = JSON.stringify({ payload, signature });
-
-        for (const [peerId, peer] of peers) {
-            if (peer.status === PeerStatus.Alive) {
-                try {
-                    peer.socket.send(packet);
-                } catch (err) {
-                    logger.error(`Failed to send ready to peer`, {
-                        peer:    peerId.slice(0, 8),
-                        message: err instanceof Error ? err.message : String(err),
-                    });
-                }
-            }
-        }
-        
-
-
-    }
-
-    public static SendUnready(
-        peers:        Map<string, Peer>,
-        myPublicKey:  string,
-        myPrivateKey: string,
-    ): void {
-        const payload = {
-            key:       myPublicKey,
-            type:      "unready",
-            timestamp: Date.now(),
-            nonce:     randomUUID(),
-        };
-        const message   = JSON.stringify(payload);
-        const signature = signMessage(message, myPrivateKey);
-        const packet    = JSON.stringify({ payload, signature });
-
-        for (const [peerId, peer] of peers) {
-            if (peer.status === PeerStatus.Alive) {
-                try {
-                    peer.socket.send(packet);
-                } catch (err) {
-                    logger.error(`Failed to send unready to peer`, {
-                        peer:    peerId.slice(0, 8),
-                        message: err instanceof Error ? err.message : String(err),
-                    });
-                }
-            }
-        }
-    }
-
-    public static SendConfigProposal(
-        config:       GameConfig,
-        version:      number,
-        peers:        Map<string, Peer>,
-        myPublicKey:  string,
-        myPrivateKey: string,
-    ): void {
-        const payload = {
-            key:       myPublicKey,
-            type:      "config_proposal",
-            config,
-            version,
-            timestamp: Date.now(),
-            nonce:     randomUUID(),
-        };
-        const message   = JSON.stringify(payload);
-        const signature = signMessage(message, myPrivateKey);
-        const packet    = JSON.stringify({ payload, signature });
-
-        for (const [peerId, peer] of peers) {
-            if (peer.status === PeerStatus.Alive) {
-                try { peer.socket.send(packet); }
-                catch (err) {
-                    logger.error(`Failed to send config_proposal`, {
-                        peer: peerId.slice(0, 8),
-                        message: err instanceof Error ? err.message : String(err),
-                    });
-                }
-            }
-        }
-    }
-
-    public static SendConfigProposalToPeer(
-        config:       GameConfig,
-        version:      number,
-        peer:         Peer,
-        myPublicKey:  string,
-        myPrivateKey: string,
-    ): void {
-        const single = new Map([[peer.peerPublicNodeId, peer]]);
-        MessageService.SendConfigProposal(config, version, single, myPublicKey, myPrivateKey);
-    }
-
-    public static SendConfigAccept(
-        version:      number,
-        peers:        Map<string, Peer>,
-        myPublicKey:  string,
-        myPrivateKey: string,
-    ): void {
-        const payload = {
-            key:       myPublicKey,
-            type:      "config_accept",
-            version,
-            timestamp: Date.now(),
-            nonce:     randomUUID(),
-        };
-        const message   = JSON.stringify(payload);
-        const signature = signMessage(message, myPrivateKey);
-        const packet    = JSON.stringify({ payload, signature });
-
-        for (const [peerId, peer] of peers) {
-            if (peer.status === PeerStatus.Alive) {
-                try { peer.socket.send(packet); }
-                catch (err) {
-                    logger.error(`Failed to send config_accept`, {
-                        peer: peerId.slice(0, 8),
-                        message: err instanceof Error ? err.message : String(err),
-                    });
-                }
-            }
-        }
-    }
-
-    public static SendVote(
-        turnIndex:    number,
-        move:         string,
-        timestamp:    number,
-        peers:        Map<string, Peer>,
-        myPublicKey:  string,
-        myPrivateKey: string,
-    ): void {
-        const payload = {
-            key:       myPublicKey,
-            type:      "vote",
-            turnIndex,
-            move,
-            timestamp,
-            nonce:     randomUUID(),
-        };
-        const message   = JSON.stringify(payload);
-        const signature = signMessage(message, myPrivateKey);
-        const packet    = JSON.stringify({ payload, signature });
-
-        for (const [peerId, peer] of peers) {
-            if (peer.status === PeerStatus.Alive) {
-                try { peer.socket.send(packet); }
-                catch (err) {
-                    logger.error(`Failed to send vote`, {
-                        peer: peerId.slice(0, 8),
-                        message: err instanceof Error ? err.message : String(err),
-                    });
-                }
-            }
-        }
-    }
-
-    public static SendDrawOffer(
-        peers:        Map<string, Peer>,
-        myPublicKey:  string,
-        myPrivateKey: string,
-    ): void {
-        const payload = { key: myPublicKey, type: 'draw_offer', timestamp: Date.now(), nonce: randomUUID() };
-        const message   = JSON.stringify(payload);
-        const signature = signMessage(message, myPrivateKey);
-        const packet    = JSON.stringify({ payload, signature });
-        for (const [peerId, peer] of peers) {
-            if (peer.status === PeerStatus.Alive) {
-                try { peer.socket.send(packet); }
-                catch (err) {
-                    logger.error(`Failed to send draw_offer`, {
-                        peer: peerId.slice(0, 8),
-                        message: err instanceof Error ? err.message : String(err),
-                    });
-                }
-            }
-        }
-    }
-
-    public static SendResignVote(
-        myTeam:       string,
-        peers:        Map<string, Peer>,
-        myPublicKey:  string,
-        myPrivateKey: string,
-    ): void {
-        const payload = { key: myPublicKey, type: 'resign_vote', timestamp: Date.now(), nonce: randomUUID() };
-        const message   = JSON.stringify(payload);
-        const signature = signMessage(message, myPrivateKey);
-        const packet    = JSON.stringify({ payload, signature });
-        for (const [peerId, peer] of peers) {
-            if (peer.status === PeerStatus.Alive && peer.team === myTeam) {
-                try { peer.socket.send(packet); }
-                catch (err) {
-                    logger.error(`Failed to send resign_vote`, {
-                        peer: peerId.slice(0, 8),
-                        message: err instanceof Error ? err.message : String(err),
-                    });
-                }
-            }
-        }
-    }
-
-    public static SendDrawResponse(
-        accepted:     boolean,
-        peers:        Map<string, Peer>,
-        myPublicKey:  string,
-        myPrivateKey: string,
-    ): void {
-        const payload = { key: myPublicKey, type: 'draw_response', accepted, timestamp: Date.now(), nonce: randomUUID() };
-        const message   = JSON.stringify(payload);
-        const signature = signMessage(message, myPrivateKey);
-        const packet    = JSON.stringify({ payload, signature });
-        for (const [peerId, peer] of peers) {
-            if (peer.status === PeerStatus.Alive) {
-                try { peer.socket.send(packet); }
-                catch (err) {
-                    logger.error(`Failed to send draw_response`, {
-                        peer: peerId.slice(0, 8),
-                        message: err instanceof Error ? err.message : String(err),
-                    });
-                }
-            }
-        }
     }
 
     public static SendTimeSyncResponse(
