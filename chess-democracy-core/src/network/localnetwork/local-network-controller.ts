@@ -6,6 +6,7 @@ import { WebsocketService }       from "../websocket-service.js";
 import { PeerData, Peer }         from "../peer.js";
 import { NETWORK_CONFIG }         from "../../utils/config.js";
 import { logger }                 from "../../utils/logger.js";
+import { randomUUID }             from "crypto";
 import type { Team }              from "../../game/game-state.js";
 import type { GameConfig }        from "../../game/voting-state.js";
 
@@ -75,99 +76,93 @@ export class LocalNetworkController extends BaseNetworkController {
     // ── Game coordination ─────────────────────────────────────────────────
 
     public broadcastReady(team: string): void {
-        MessageService.SendReady(
-            team,
+        MessageService.broadcast(
+            { type: 'ready', team },
             this.getAllPeers(),
-            this.identity.publicKey,
-            this.identity.privateKey,
+            this.identity,
         );
     }
 
     public broadcastUnready(): void {
-        MessageService.SendUnready(
+        MessageService.broadcast(
+            { type: 'unready' },
             this.getAllPeers(),
-            this.identity.publicKey,
-            this.identity.privateKey,
+            this.identity,
         );
     }
 
     public broadcastSideChoice(team: Team): void {
-        MessageService.sendSideChoice(
-            team,
+        MessageService.broadcast(
+            { type: 'side_choice', team, request_id: randomUUID(), client_time: Date.now() },
             this.getAllPeers(),
-            this.identity.publicKey,
-            this.identity.privateKey,
+            this.identity,
         );
     }
 
     public sendSideChoiceToPeer(team: Team, peer: Peer): void {
-        const single = new Map<string, Peer>([[peer.peerPublicNodeId, peer]]);
-        MessageService.sendSideChoice(
-            team,
-            single,
-            this.identity.publicKey,
-            this.identity.privateKey,
+        MessageService.broadcast(
+            { type: 'side_choice', team, request_id: randomUUID(), client_time: Date.now() },
+            this.getAllPeers(),
+            this.identity,
+            p => p.peerPublicNodeId === peer.peerPublicNodeId,
         );
     }
 
     public broadcastConfigProposal(config: GameConfig, version: number): void {
-        MessageService.SendConfigProposal(
-            config, version,
+        MessageService.broadcast(
+            { type: 'config_proposal', config, version },
             this.getAllPeers(),
-            this.identity.publicKey,
-            this.identity.privateKey,
+            this.identity,
         );
     }
 
     public sendConfigProposalToPeer(config: GameConfig, version: number, peer: Peer): void {
-        MessageService.SendConfigProposalToPeer(
-            config, version, peer,
-            this.identity.publicKey,
-            this.identity.privateKey,
+        MessageService.broadcast(
+            { type: 'config_proposal', config, version },
+            this.getAllPeers(),
+            this.identity,
+            p => p.peerPublicNodeId === peer.peerPublicNodeId,
         );
     }
 
     public broadcastConfigAccept(version: number): void {
-        MessageService.SendConfigAccept(
-            version,
+        MessageService.broadcast(
+            { type: 'config_accept', version },
             this.getAllPeers(),
-            this.identity.publicKey,
-            this.identity.privateKey,
+            this.identity,
         );
     }
 
     public broadcastVote(turnIndex: number, move: string, timestamp: number): void {
-        MessageService.SendVote(
-            turnIndex, move, timestamp,
+        MessageService.broadcast(
+            { type: 'vote', turnIndex, move, timestamp },
             this.getAllPeers(),
-            this.identity.publicKey,
-            this.identity.privateKey,
+            this.identity,
         );
     }
 
     public broadcastResignVoteToTeam(team: Team): void {
-        MessageService.SendResignVote(
-            team,
+        MessageService.broadcast(
+            { type: 'resign_vote' },
             this.getAllPeers(),
-            this.identity.publicKey,
-            this.identity.privateKey,
+            this.identity,
+            p => p.team === team,
         );
     }
 
     public broadcastDrawOffer(): void {
-        MessageService.SendDrawOffer(
+        MessageService.broadcast(
+            { type: 'draw_offer' },
             this.getAllPeers(),
-            this.identity.publicKey,
-            this.identity.privateKey,
+            this.identity,
         );
     }
 
     public broadcastDrawResponse(accepted: boolean): void {
-        MessageService.SendDrawResponse(
-            accepted,
+        MessageService.broadcast(
+            { type: 'draw_response', accepted },
             this.getAllPeers(),
-            this.identity.publicKey,
-            this.identity.privateKey,
+            this.identity,
         );
     }
 
