@@ -166,8 +166,8 @@ Artifacts land in `chess-democracy-electron/release/`:
 
 | File | What it is |
 |---|---|
-| `ChessDemocracy-1.0.0-portable.exe` | Single file, no install. Double-click to run. |
-| `Chess Democracy Setup 1.0.0.exe` | NSIS installer, lets you pick the install directory. |
+| `ChessDemocracy-0.1.0-portable.exe` | Single file, no install. Double-click to run. |
+| `Chess Democracy Setup 0.1.0.exe` | NSIS installer, lets you pick the install directory. |
 | `win-unpacked/` | The unpacked app the two above are built from. |
 
 ### Step-by-step (if you only changed one layer)

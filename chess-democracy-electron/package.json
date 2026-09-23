@@ -1,6 +1,6 @@
 {
   "name": "chess-democracy-electron",
-  "version": "1.0.0",
+  "version": "0.1.0",
   "description": "Decentralised peer-to-peer chess — no server required",
   "author": "Ayoub Themry",
   "main": "dist/main.js",
