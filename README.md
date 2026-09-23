@@ -17,7 +17,7 @@ Resigning works the same way. No single player can give up the game on their own
 ## Architecture
 
 ```
-Chess-Hive-Global-dev/
+Chess-Democracy/
 ├── chess-democracy-core/          # ESM Node.js — game logic, networking, crypto identity
 │   └── src/
 │       ├── core/node.ts      # Main entry point (EventEmitter)
@@ -32,7 +32,7 @@ Chess-Hive-Global-dev/
     └── ReactChessDemocracy/       # Vite + React SWC
         └── src/
             ├── store.ts      # Zustand store — all React state lives here
-            ├── useChessHive.ts # IPC ↔ store bridge (subscriptions + hydration)
+            ├── useChessDemocracy.ts # IPC ↔ store bridge (subscriptions + hydration)
             └── screens/      # LobbyScreen, GameScreen, GameOverScreen, LoginScreen
 ```
 

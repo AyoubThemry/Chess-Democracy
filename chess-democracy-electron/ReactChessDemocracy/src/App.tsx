@@ -13,7 +13,7 @@
 
 import './App.css';
 import { useEffect }                        from 'react';
-import { useChessHive }                     from './useChessHive';
+import { useChessDemocracy }                     from './useChessDemocracy';
 import { useStore, selPhase, selHydrated }  from './store';
 import LoginScreen                          from './login';
 import BootScreen                           from './screens/BootScreen';
@@ -60,7 +60,7 @@ function NotificationBanner() {
 // ── Root ──────────────────────────────────────────────────────────────────────
 
 export default function App() {
-    useChessHive();
+    useChessDemocracy();
 
     const hydrated         = useStore(selHydrated);
     const isAuthenticated  = useStore(s => s.isAuthenticated);

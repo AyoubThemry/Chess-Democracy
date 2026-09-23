@@ -87,11 +87,11 @@ function fail(error: string): IpcResult<never>  { return { ok: false, error }; }
 // ---
 
 function prefsPath(): string {
-    return path.join(app.getPath('userData'), 'chess-hive-prefs.json');
+    return path.join(app.getPath('userData'), 'chess-democracy-prefs.json');
 }
 
 function defaultIdentityPath(): string {
-    return path.join(app.getPath('home'), '.chess-hive', 'identity.pem');
+    return path.join(app.getPath('home'), '.chess-democracy', 'identity.pem');
 }
 
 interface Prefs {

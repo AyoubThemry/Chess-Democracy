@@ -19,7 +19,7 @@ import { join }                    from "node:path";
 import { homedir }                 from "node:os";
 
 function defaultIdentityPath(): string {
-    return join(homedir(), '.chess-hive', 'identity.pem');
+    return join(homedir(), '.chess-democracy', 'identity.pem');
 }
 
 // ---------------------------------------------------------------------------
@@ -376,7 +376,7 @@ export class Node extends EventEmitter {
             };
 
             this.localNetwork = new LocalNetworkController(
-                'Chess-Hive-Local',
+                'Chess-Democracy-Local',
                 this.service,
                 this.identity,
                 actualPort,

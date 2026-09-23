@@ -3,7 +3,7 @@
  *
  * Unit tests for the Zustand store. Each test resets the store so actions
  * don't bleed across cases. We test pure state transitions only — no IPC,
- * no React component, no window.chessHive.
+ * no React component, no window.chessDemocracy.
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';

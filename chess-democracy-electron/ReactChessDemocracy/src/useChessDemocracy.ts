@@ -6,11 +6,11 @@ import { useStore } from './store';
 
 // Check whether we are inside the Electron preload context.
 const ipc = () =>
-    typeof window !== 'undefined' && (window as any).chessHive
-        ? (window as any).chessHive
+    typeof window !== 'undefined' && (window as any).chessDemocracy
+        ? (window as any).chessDemocracy
         : null;
 
-export function useChessHive(): void {
+export function useChessDemocracy(): void {
     const store       = useStore();
     const countdownId = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -18,7 +18,7 @@ export function useChessHive(): void {
         const api = ipc();
         if (!api) {
             // Running in browser dev mode without Electron — skip IPC entirely
-            console.warn('[useChessHive] window.chessHive not found — running without IPC');
+            console.warn('[useChessDemocracy] window.chessDemocracy not found — running without IPC');
             store.setHydrated();
             store.setAuthenticated(true);
             return;
@@ -54,7 +54,7 @@ export function useChessHive(): void {
                     return;
                 }
                 // Saved PEM is gone / corrupt — fall through to login screen
-                console.warn('[useChessHive] saved identity failed to load — showing login');
+                console.warn('[useChessDemocracy] saved identity failed to load — showing login');
             }
             // Not remembered or failed — show the login screen
             store.setHydrated();   // mark hydrated so App doesn't show spinner

@@ -31,7 +31,7 @@ export default function LoginScreen() {
     const setPeers          = useStore(s => s.setPeers);
     const applyConfigSnapshot = useStore(s => s.applyConfigSnapshot);
 
-    const api = () => (window as any).chessHive;
+    const api = () => (window as any).chessDemocracy;
 
     async function hydrateStore() {
         const a = api();

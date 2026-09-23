@@ -1,12 +1,12 @@
-// contextBridge — exposes window.chessHive to the React renderer.
-// Implements ChessHiveAPI from ipc-channels.ts exactly; nothing else is exposed.
+// contextBridge — exposes window.chessDemocracy to the React renderer.
+// Implements ChessDemocracyAPI from ipc-channels.ts exactly; nothing else is exposed.
 
 import { contextBridge, ipcRenderer } from 'electron';
 
 import {
     INVOKE,
     PUSH,
-    ChessHiveAPI,
+    ChessDemocracyAPI,
     Team,
 } from './ipc-channels';
 
@@ -16,7 +16,7 @@ function listen<T>(channel: string, cb: (data: T) => void): () => void {
     return () => ipcRenderer.removeListener(channel, handler);
 }
 
-const api: ChessHiveAPI = {
+const api: ChessDemocracyAPI = {
 
 
     getIdentity: () =>
@@ -105,5 +105,5 @@ const api: ChessHiveAPI = {
 },
 };
 
-// Expose as window.chessHive — the only thing the renderer can see
-contextBridge.exposeInMainWorld('chessHive', api);
+// Expose as window.chessDemocracy — the only thing the renderer can see
+contextBridge.exposeInMainWorld('chessDemocracy', api);

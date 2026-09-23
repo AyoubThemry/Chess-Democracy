@@ -11,7 +11,7 @@
     "dev:core": "cd ../chess-democracy-core && npm run build:watch",
     "dev:react": "cd ./ReactChessDemocracy && npm run dev",
     "dev:electron": "tsc && wait-on http://localhost:5173 && cross-env ELECTRON_DEV=true electron .",
-    "dev:p2": "wait-on http://localhost:5173 && cross-env ELECTRON_DEV=true CHESS_IDENTITY=%USERPROFILE%\\.chess-hive\\identity-p2.pem electron .",
+    "dev:p2": "wait-on http://localhost:5173 && cross-env ELECTRON_DEV=true CHESS_IDENTITY=%USERPROFILE%\\.chess-democracy\\identity-p2.pem electron .",
     "build": "tsc",
     "build:core": "cd ../chess-democracy-core && npm run build",
     "build:react": "cd ReactChessDemocracy && npm run build",

@@ -20,7 +20,7 @@ function bootNode(identitySuffix: string): Promise<Node> {
     return new Promise((resolve, reject) => {
         const identityPath = path.join(
             os.tmpdir(),
-            `chess-hive-test-${identitySuffix}-${Date.now()}.pem`,
+            `chess-democracy-test-${identitySuffix}-${Date.now()}.pem`,
         );
         const node = new Node(identityPath);
         const timer = setTimeout(() => reject(new Error(`Node ${identitySuffix} boot timed out`)), 6000);

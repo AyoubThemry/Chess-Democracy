@@ -318,9 +318,9 @@ export interface PushMap {
     [PUSH.RESIGN_VOTE_EXPIRED]: Record<string, never>;
 }
 
-// window.chessHive — full type exposed to React by preload.ts
+// window.chessDemocracy — full type exposed to React by preload.ts
 
-export interface ChessHiveAPI {
+export interface ChessDemocracyAPI {
     getIdentity():      Promise<InvokeMap[typeof INVOKE.NODE_GET_IDENTITY]['result']>;
     getState():         Promise<InvokeMap[typeof INVOKE.NODE_GET_STATE]['result']>;
     getPeers():         Promise<InvokeMap[typeof INVOKE.PEER_GET_ALL]['result']>;
@@ -368,10 +368,10 @@ export interface ChessHiveAPI {
     };
 }
 
-// Augment the global Window interface so TypeScript knows about window.chessHive
+// Augment the global Window interface so TypeScript knows about window.chessDemocracy
 // in the renderer process without any imports needed in React components.
 declare global {
     interface Window {
-        chessHive: ChessHiveAPI;
+        chessDemocracy: ChessDemocracyAPI;
     }
 }
