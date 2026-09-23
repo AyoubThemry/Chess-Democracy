@@ -162,7 +162,13 @@ npm run dist         →  electron-builder  (packages final .exe / .dmg / .AppIm
 
 > **Never run `npm run dist` directly** — it skips the TypeScript compilation steps and packages stale JS. The result is a broken exe (e.g. `drawOffered is not a function`).
 
-The packaged app appears in `chess-democracy-electron/dist/`.
+Artifacts land in `chess-democracy-electron/release/`:
+
+| File | What it is |
+|---|---|
+| `ChessDemocracy-1.0.0-portable.exe` | Single file, no install. Double-click to run. |
+| `Chess Democracy Setup 1.0.0.exe` | NSIS installer, lets you pick the install directory. |
+| `win-unpacked/` | The unpacked app the two above are built from. |
 
 ### Step-by-step (if you only changed one layer)
 
