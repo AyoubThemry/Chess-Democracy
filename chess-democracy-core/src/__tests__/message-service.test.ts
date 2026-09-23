@@ -184,6 +184,23 @@ describe('MessageService.HandleMessage', () => {
         );
         expect(peer.lastSeen).toBeGreaterThanOrEqual(before);
     });
+
+    it('a ping refreshes lastSeen and is not treated as unknown', () => {
+        peer.lastSeen = Date.now() - 10_000;
+        const before  = peer.lastSeen;
+
+        const payload = { type: 'ping', nonce: randomUUID(), timestamp: Date.now() };
+        const sig     = signMessage(JSON.stringify(payload), sender.privateKey);
+        const result  = MessageService.HandleMessage(
+            payload, sig, sender.publicKey,
+            peers, receiver.publicKey, receiver.privateKey, makeCallbacks({ setTimeOffset: noop }),
+        );
+
+        // null is what an unrecognised type returns, which would mean the ping
+        // never kept the peer alive.
+        expect(result).toBe('ping');
+        expect(peer.lastSeen).toBeGreaterThan(before);
+    });
 });
 
 describe('MessageService.broadcast', () => {

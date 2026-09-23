@@ -16,7 +16,7 @@ try {
 // ---------------------------------------------------------------------------
 const portArg = process.argv[2] ? parseInt(process.argv[2]) : 0;
 
-logger.info('Starting Chess-Hive node', { port: portArg || 'random' });
+logger.info('Starting Chess Democracy node', { port: portArg || 'random' });
 
 const myNode = new Node();
 

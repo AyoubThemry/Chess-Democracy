@@ -30,6 +30,16 @@ describe('NETWORK_CONFIG', () => {
     it('NONCE_TTL_MS is large enough to outlive timestamp tolerance', () => {
         expect(NETWORK_CONFIG.NONCE_TTL_MS).toBeGreaterThanOrEqual(60_000);
     });
+
+    it('leaves room for lost pings before a live peer is swept', () => {
+        // LocalNetworkController pings every GHOST_TIMEOUT_MS / 3. Peers are
+        // only swept on lastSeen, so the gap between pings has to stay well
+        // under the timeout or an idle peer gets dropped while still alive.
+        // This is what broke when GHOST_TIMEOUT_MS was raised 10x to paper
+        // over the missing heartbeat.
+        const pingEvery = NETWORK_CONFIG.GHOST_TIMEOUT_MS / 3;
+        expect(pingEvery * 2).toBeLessThan(NETWORK_CONFIG.GHOST_TIMEOUT_MS);
+    });
 });
 
 describe('validateNetworkConfig', () => {

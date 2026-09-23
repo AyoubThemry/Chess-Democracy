@@ -7,7 +7,7 @@ import { Logger, LogLevel } from '../utils/logger.js';
 // ── helpers ──────────────────────────────────────────────────────────────────
 
 function makeTmpLogger(level: LogLevel = LogLevel.DEBUG): { logger: Logger; logPath: string } {
-    const dir     = fs.mkdtempSync(path.join(os.tmpdir(), 'chess-hive-test-'));
+    const dir     = fs.mkdtempSync(path.join(os.tmpdir(), 'chess-democracy-test-'));
     const logger  = new Logger('test-node', level, dir, 'test.log');
     const logPath = path.join(dir, 'test.log');
     return { logger, logPath };
@@ -82,7 +82,7 @@ describe('Logger', () => {
     });
 
     it('stamps every line with the nodeId', () => {
-        const dir    = fs.mkdtempSync(path.join(os.tmpdir(), 'chess-hive-test-'));
+        const dir    = fs.mkdtempSync(path.join(os.tmpdir(), 'chess-democracy-test-'));
         const log    = new Logger('myspecialnode', LogLevel.DEBUG, dir, 'stamp.log');
         const lpath  = path.join(dir, 'stamp.log');
         log.info('stamped');

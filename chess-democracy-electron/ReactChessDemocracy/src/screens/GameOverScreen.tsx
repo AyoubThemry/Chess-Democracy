@@ -58,7 +58,7 @@ export default function GameOverScreen() {
                                       : 'result--loss';
 
     async function handlePlayAgain() {
-        await (window as any).chessHive.resetGame();
+        await (window as any).chessDemocracy.resetGame();
         resetGame();
     }
 

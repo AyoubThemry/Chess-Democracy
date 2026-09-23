@@ -1,5 +1,5 @@
 // Zustand store — single source of truth for all React state.
-// Populated on boot by useChessHive() and kept in sync by PUSH subscriptions.
+// Populated on boot by useChessDemocracy() and kept in sync by PUSH subscriptions.
 
 import { create } from 'zustand';
 import type {
@@ -79,7 +79,7 @@ export interface AppNotification {
 }
 
 
-export interface ChessHiveStore {
+export interface ChessDemocracyStore {
 
 
     /** Whether the IPC bridge has been hydrated at least once. */
@@ -223,7 +223,7 @@ const defaultGame: GameState = {
 };
 
 
-export const useStore = create<ChessHiveStore>((set) => ({
+export const useStore = create<ChessDemocracyStore>((set) => ({
 
     hydrated:        false,
     isAuthenticated: false,
@@ -521,11 +521,11 @@ export const useStore = create<ChessHiveStore>((set) => ({
 
 // Stable selectors — use in components instead of inline arrow functions
 
-export const selPhase      = (s: ChessHiveStore) => s.game.phase;
-export const selIsMyTurn   = (s: ChessHiveStore) => s.game.isMyTurn;
-export const selFen        = (s: ChessHiveStore) => s.game.fen;
-export const selLegalMoves = (s: ChessHiveStore) => s.game.legalMoves;
-export const selMyTeam     = (s: ChessHiveStore) => s.game.myTeam;
-export const selPeers      = (s: ChessHiveStore) => s.peers;
-export const selResult     = (s: ChessHiveStore) => s.game.result;
-export const selHydrated   = (s: ChessHiveStore) => s.hydrated;
+export const selPhase      = (s: ChessDemocracyStore) => s.game.phase;
+export const selIsMyTurn   = (s: ChessDemocracyStore) => s.game.isMyTurn;
+export const selFen        = (s: ChessDemocracyStore) => s.game.fen;
+export const selLegalMoves = (s: ChessDemocracyStore) => s.game.legalMoves;
+export const selMyTeam     = (s: ChessDemocracyStore) => s.game.myTeam;
+export const selPeers      = (s: ChessDemocracyStore) => s.peers;
+export const selResult     = (s: ChessDemocracyStore) => s.game.result;
+export const selHydrated   = (s: ChessDemocracyStore) => s.hydrated;

@@ -255,7 +255,7 @@ export default function GameScreen() {
 
     // Draw offer subscriptions
     useEffect(() => {
-        const api = (window as any).chessHive;
+        const api = (window as any).chessDemocracy;
         const unsub1 = api.on.drawOffered((d: any) => {
             if (!d.fromSelf) setDrawOffered(true);
         });
@@ -365,7 +365,7 @@ export default function GameScreen() {
 
     async function handleRematch() {
         try {
-            await (window as any).chessHive.resetGame();
+            await (window as any).chessDemocracy.resetGame();
         } catch {
             setNotification({ type: 'error', message: 'Failed to reset game' });
         }
@@ -376,7 +376,7 @@ export default function GameScreen() {
         if (!voting_move || castingVote || alreadyVoted) return;
         setCastingVote(true);
         try {
-            const api = (window as any).chessHive;
+            const api = (window as any).chessDemocracy;
             console.log('[VOTE] calling api.castVote with:', voting_move);
             const res = await api.castVote(voting_move);
             console.log('[VOTE] castVote result:', res);
@@ -394,7 +394,7 @@ export default function GameScreen() {
 
     async function handleResign() {
         try {
-            const res = await (window as any).chessHive.resign();
+            const res = await (window as any).chessDemocracy.resign();
             if (!res.ok) {
                 if (res.error !== 'error:already_voted') {
                     setNotification({ type: 'error', message: `Resign vote failed: ${res.error}` });
@@ -409,7 +409,7 @@ export default function GameScreen() {
         if (drawSent) return;
         setDrawSent(true);
         try {
-            const res = await (window as any).chessHive.offerDraw();
+            const res = await (window as any).chessDemocracy.offerDraw();
             if (!res.ok) {
                 setDrawSent(false);
                 setNotification({ type: 'error', message: `Draw offer failed: ${res.error}` });
@@ -423,7 +423,7 @@ export default function GameScreen() {
     async function handleDrawResponse(accept: boolean) {
         setDrawOffered(false);
         try {
-            await (window as any).chessHive.respondToDraw(accept);
+            await (window as any).chessDemocracy.respondToDraw(accept);
         } catch {
             setNotification({ type: 'error', message: 'Failed to respond to draw offer' });
         }

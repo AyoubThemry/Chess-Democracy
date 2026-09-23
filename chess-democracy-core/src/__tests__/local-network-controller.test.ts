@@ -46,7 +46,7 @@ function makeSocket(): WebSocket {
 function makeController(peers: Map<string, Peer> = new Map(), accepting = true) {
     const listener = makeListener();
     const ctrl     = new LocalNetworkController(
-        'Chess-Hive-Test',
+        'Chess-Democracy-Test',
         listener,
         identity,
         9000,

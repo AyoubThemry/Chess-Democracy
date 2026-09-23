@@ -1,5 +1,5 @@
 // ---------------------------------------------------------------------------
-// Shared error utilities for the Chess-Hive backend.
+// Shared error utilities for the Chess Democracy backend.
 //
 // Rule: never write `error as Error` or `catch(e: any)` anywhere else.
 // Import `toError` here and use it instead.

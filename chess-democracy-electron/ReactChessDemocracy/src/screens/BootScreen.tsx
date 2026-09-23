@@ -3,7 +3,7 @@
  *
  * Shown when phase === 'waiting_for_side'.
  * The user must pick white or black before anything else can happen.
- * Calls window.chessHive.setTeam() then getState() to advance the phase.
+ * Calls window.chessDemocracy.setTeam() then getState() to advance the phase.
  */
 
 import { useState } from 'react';
@@ -20,7 +20,7 @@ export default function BootScreen() {
         setError(null);
         setLoading(team);
         try {
-            const api = (window as any).chessHive;
+            const api = (window as any).chessDemocracy;
             const res = await api.setTeam(team);
 
             if (!res.ok) {

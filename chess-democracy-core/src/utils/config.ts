@@ -2,7 +2,10 @@ export const NETWORK_CONFIG = {
     MAX_PEERS: 150,
     // GOSSIP_TTL: 6,
     HANDSHAKE_TIMEOUT_MS: 5000,       // 5s  – unchanged, reasonable
-    GHOST_TIMEOUT_MS: 300_000,             // 30s – peers unresponsive beyond this are marked dead
+    GHOST_TIMEOUT_MS: 30_000,          // 30s – peers unresponsive beyond this are marked dead.
+                                       // Peers ping at a third of this, so two
+                                       // pings can be lost before a live peer is
+                                       // wrongly swept.
     WAIT_BEFORE_READYING: 10000,       // 10s – was 60000 (60 s) – shorter settle time for LAN
     NETWORK_BACKLOG: 500,
     TIME_SKEW_TOLERANCE_MS: 30000,     // 30s – used in handshake timestamp check (was 120 s inline magic number)
@@ -14,7 +17,7 @@ export const GAME_CONFIG = {
     READY_CHECK_INTERVAL_MS:  2_000,  // how often to poll peer ready status
     READY_TIMEOUT_MS:        30_000,  // abort if not all peers ready within this
     GAME_START_COUNTDOWN_MS: 10_000,  // countdown from all-ready to game-begin
-    MOVE_TIMEOUT_MS:        120_000,  // 2 min per move before forfeit (future use)
+    MOVE_TIMEOUT_MS:        120_000,  // 2 min hard cap per turn, spanning any revotes
 } as const;
 
 export const VOTE_CONFIG = {

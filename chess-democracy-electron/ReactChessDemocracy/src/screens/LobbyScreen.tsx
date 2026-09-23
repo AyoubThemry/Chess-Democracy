@@ -102,7 +102,7 @@ export default function LobbyScreen() {
         const resignWindowMs   = resignWindowSecs * 1000;
         setProposing(true);
         try {
-            const api = (window as any).chessHive;
+            const api = (window as any).chessDemocracy;
             const res = await api.setConfig(vms, maxRevotes, resignThreshold, resignWindowMs);
             if (!res.ok) {
                 setNotification({ type: 'error', message: res.error });
@@ -123,7 +123,7 @@ export default function LobbyScreen() {
         if (accepting || !canConfig) return;
         setAccepting(true);
         try {
-            const api = (window as any).chessHive;
+            const api = (window as any).chessDemocracy;
             const res = await api.acceptConfig();
             if (!res.ok) {
                 setNotification({ type: 'error', message: res.error });
@@ -141,7 +141,7 @@ export default function LobbyScreen() {
         if (switching || myTeam === team) return;
         setSwitching(team);
         try {
-            const api = (window as any).chessHive;
+            const api = (window as any).chessDemocracy;
             const res = await api.setTeam(team);
             if (!res.ok) {
                 setNotification({ type: 'error', message: res.error });
@@ -161,7 +161,7 @@ export default function LobbyScreen() {
         if (isReadied || readying) return;
         setReadying(true);
         try {
-            const api = (window as any).chessHive;
+            const api = (window as any).chessDemocracy;
             const res = await api.ready();
             if (!res.ok) {
                 setNotification({ type: 'error', message: res.error });
@@ -180,7 +180,7 @@ export default function LobbyScreen() {
     async function handleUnready() {
         setReadying(false); // clear any leftover spinner state
         try {
-            const api = (window as any).chessHive;
+            const api = (window as any).chessDemocracy;
             const res = await api.unready();
             if (!res.ok) {
                 setNotification({ type: 'error', message: res.error });
@@ -211,7 +211,7 @@ export default function LobbyScreen() {
                         className="logout-btn"
                         title="Switch identity"
                         onClick={async () => {
-                            await (window as any).chessHive.logout();
+                            await (window as any).chessDemocracy.logout();
                         }}
                     >
                         ⏏

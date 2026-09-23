@@ -17,7 +17,7 @@ Resigning works the same way. No single player can give up the game on their own
 ## Architecture
 
 ```
-Chess-Hive-Global-dev/
+Chess-Democracy/
 ├── chess-democracy-core/          # ESM Node.js — game logic, networking, crypto identity
 │   └── src/
 │       ├── core/node.ts      # Main entry point (EventEmitter)
@@ -32,7 +32,7 @@ Chess-Hive-Global-dev/
     └── ReactChessDemocracy/       # Vite + React SWC
         └── src/
             ├── store.ts      # Zustand store — all React state lives here
-            ├── useChessHive.ts # IPC ↔ store bridge (subscriptions + hydration)
+            ├── useChessDemocracy.ts # IPC ↔ store bridge (subscriptions + hydration)
             └── screens/      # LobbyScreen, GameScreen, GameOverScreen, LoginScreen
 ```
 
@@ -162,7 +162,13 @@ npm run dist         →  electron-builder  (packages final .exe / .dmg / .AppIm
 
 > **Never run `npm run dist` directly** — it skips the TypeScript compilation steps and packages stale JS. The result is a broken exe (e.g. `drawOffered is not a function`).
 
-The packaged app appears in `chess-democracy-electron/dist/`.
+Artifacts land in `chess-democracy-electron/release/`:
+
+| File | What it is |
+|---|---|
+| `ChessDemocracy-0.1.0-portable.exe` | Single file, no install. Double-click to run. |
+| `Chess Democracy Setup 0.1.0.exe` | NSIS installer, lets you pick the install directory. |
+| `win-unpacked/` | The unpacked app the two above are built from. |
 
 ### Step-by-step (if you only changed one layer)
 

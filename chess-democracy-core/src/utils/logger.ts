@@ -1,5 +1,5 @@
 /**
- * Chess-Hive Logger
+ * Chess Democracy Logger
  *
  * Replaces the fragile console.log-hijack pattern in index.ts.
  *

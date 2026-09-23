@@ -1,0 +1,38 @@
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install core
+        run: npm ci --prefix chess-democracy-core
+
+      - name: Build core
+        run: npm run build --prefix chess-democracy-core
+
+      - name: Test core
+        run: npm test --prefix chess-democracy-core
+
+      - name: Install renderer
+        run: npm ci --prefix chess-democracy-electron/ReactChessDemocracy
+
+      - name: Test renderer
+        run: npm test --prefix chess-democracy-electron/ReactChessDemocracy
+
+      - name: Install electron shell
+        run: npm ci --prefix chess-democracy-electron
+
+      - name: Typecheck electron shell
+        run: npm run build --prefix chess-democracy-electron

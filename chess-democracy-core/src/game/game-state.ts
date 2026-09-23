@@ -1,5 +1,5 @@
 /**
- * GameState — the authoritative chess engine wrapper for one Chess-Hive game.
+ * GameState — the authoritative chess engine wrapper for one Chess Democracy game.
  *
  * Responsibilities:
  *  • Wraps chess.js for move validation and FEN tracking
