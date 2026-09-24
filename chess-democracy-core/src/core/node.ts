@@ -338,6 +338,23 @@ export class Node extends EventEmitter {
                         });
                         return;
                     }
+
+                    // castVote() checks both of these for our own votes. A peer's
+                    // vote arrives here without either, so check them again.
+                    const senderTeam = this.allPeers.get(senderKey)?.team ?? null;
+                    if (senderTeam !== this.game.currentTurn) {
+                        logger.warn(`Vote from a player not on the side to move`, {
+                            peer: senderKey.slice(0, 8),
+                            senderTeam,
+                            turn: this.game.currentTurn,
+                        });
+                        return;
+                    }
+                    if (!this.game.legalMoves.includes(move)) {
+                        logger.warn(`Illegal move in peer vote`, { peer: senderKey.slice(0, 8), move });
+                        return;
+                    }
+
                     const result = this._voting.castVote(senderKey, move, this.getSynchronizedTime());
                     if (result === 'ok') {
                         logger.info(`Peer vote recorded`, { peer: senderKey.slice(0, 8), move, turnIndex });
@@ -349,6 +366,17 @@ export class Node extends EventEmitter {
 
                 onResignVote: (senderKey) => {
                     if (this.game.phase !== 'in_progress') return;
+
+                    // Resigning is a team decision. SendResignVote only targets
+                    // teammates, but that's the sender being polite, not a check.
+                    const senderTeam = this.allPeers.get(senderKey)?.team ?? null;
+                    if (!this.game.myTeam || senderTeam !== this.game.myTeam) {
+                        logger.warn(`Resign vote from a non-teammate ignored`, {
+                            peer: senderKey.slice(0, 8),
+                            senderTeam,
+                        });
+                        return;
+                    }
 
                     // A teammate started a resign vote we don't know about yet —
                     // open a local window so our renderer shows the banner too.
