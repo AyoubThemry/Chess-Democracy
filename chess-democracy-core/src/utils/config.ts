@@ -27,6 +27,7 @@ export const VOTE_CONFIG = {
     MIN_VOTE_WINDOW_MS:         5_000,
     MAX_VOTE_WINDOW_MS:       120_000,
     VOTE_GRACE_MS:                500,  // extra ms after window close before tally
+    TALLY_WAIT_MS:              3_000,  // how long non-masters wait for the master's result before re-checking who the master is
     DEFAULT_RESIGN_THRESHOLD:    0.67,  // fraction of connected team needed to resign
     DEFAULT_RESIGN_WINDOW_MS:  60_000,  // 1 min — resign vote auto-expires after this
 } as const;

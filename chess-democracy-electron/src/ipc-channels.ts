@@ -21,7 +21,7 @@ export type GamePhase =
 
 export interface GameResult {
     winner: Team | 'draw' | null;
-    reason: 'checkmate' | 'stalemate' | 'resignation' | 'disconnect' | 'draw_agreement' | 'revotes_exhausted' | 'timeout';
+    reason: 'checkmate' | 'stalemate' | 'resignation' | 'disconnect' | 'draw_agreement' | 'revotes_exhausted' | 'timeout' | 'desync';
 }
 
 export interface RecordedMove {

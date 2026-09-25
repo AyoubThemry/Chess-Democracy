@@ -53,6 +53,21 @@ Each player has an Ed25519 keypair stored as a PEM file (`~/.chess-democracy/ide
 
 When it is a side's turn, a configurable voting window opens (default 30 s, set in lobby via Config panel). Each player on that side casts a vote for a legal move. The plurality winner is committed. On a 3-way split with no majority the window restarts; after `maxRevotes` failed rounds the game ends with `revotes_exhausted`.
 
+### Who counts the votes
+
+If every node counted the votes it happened to receive, two nodes could see different votes, play different moves, and drift apart. So only one node counts: the master, which is whoever has the lowest public key.
+
+When the window closes, the master sends a `tally_result` with the winning move and every vote it counted, each still carrying its voter's own signature. Every other node then checks it before applying anything:
+
+- each vote's signature is valid for the voter it names
+- every voter is on the side to move, voted once, and chose a legal move
+- every vote belongs to this turn and this round
+- counting the votes again gives the result the master announced
+
+If all of that holds, the move is played. If not, the game stops with a "got out of sync" message instead of carrying on in a different position from everyone else. If the master drops out mid-turn, the next-lowest key takes over, since every node already has every vote.
+
+The master can't invent votes or miscount. What it can do is leave a valid vote out, because a vote it dropped and a vote that arrived too late look the same to everyone else. Fine for games between friends; worth knowing if you play with strangers.
+
 ### Resign vote protocol
 
 No single player can unilaterally resign. Clicking Resign casts a yes vote. Once ≥ `resignThreshold` (default 67 %) of the currently connected teammates have voted yes, the side forfeits. The vote window auto-expires after `resignWindowMs` (default 60 s) with no effect if the threshold is not reached. Teammate disconnects shrink the denominator — a vote that was at 1/3 becomes 1/2 if a non-voter leaves. Config keys `resignThreshold` and `resignWindowMs` flow through the existing config-proposal handshake.
@@ -167,8 +182,8 @@ Artifacts land in `chess-democracy-electron/release/`:
 
 | File | What it is |
 |---|---|
-| `Chess Democracy Setup 0.1.1.exe` | Installer. Recommended: installs once, then starts in under a second. |
-| `ChessDemocracy-0.1.1-portable.exe` | Single file, no install. Unpacks itself on every launch, so it takes a few seconds to start. |
+| `Chess Democracy Setup 0.1.2.exe` | Installer. Recommended: installs once, then starts in under a second. |
+| `ChessDemocracy-0.1.2-portable.exe` | Single file, no install. Unpacks itself on every launch, so it takes a few seconds to start. |
 | `win-unpacked/` | The unpacked app the two above are built from. |
 
 ### Step-by-step (if you only changed one layer)
@@ -214,6 +229,7 @@ Messages are JSON, broadcast over TCP to all connected peers. Each message is wr
 | `config` | broadcast | Propose new voting window / revote settings |
 | `config_accepted` | broadcast | Accept the current config version |
 | `vote` | broadcast | Cast a move vote during voting window |
+| `tally_result` | broadcast (master only) | Winning move plus every signed vote counted, so others can recount |
 | `move` | broadcast | Committed move (after tally) |
 | `game_over` | broadcast | Game ended — includes result & reason |
 | `draw_offer` | broadcast | Offer a draw |
