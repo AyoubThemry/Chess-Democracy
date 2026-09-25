@@ -6,7 +6,6 @@ import { logger }                  from "../../utils/logger.js";
 import type { Team, GameResult }   from "../../game/game-state.js";
 import type { GameConfig, SignedVote } from "../../game/voting-state.js";
 import type { TallyClaim }         from "../../game/verify-tally.js";
-import WebSocket                   from "ws";
 // Node is intentionally NOT imported here.
 // The time-offset callback is injected at call time to avoid a circular
 // dependency: Node → LocalNetworkController → MessageService → Node.
@@ -128,10 +127,10 @@ export class MessageService {
         const packet    = JSON.stringify({ payload, signature });
 
         for (const [peerId, peer] of peers) {
-            if (peer.status !== PeerStatus.Alive) continue;
+            if (peer.status !== PeerStatus.Alive || !peer.connection.isOpen) continue;
             if (filter && !filter(peer))          continue;
             try {
-                peer.socket.send(packet);
+                peer.connection.send(packet);
             } catch (err) {
                 logger.error(`Failed to send ${msg.type}`, {
                     peer:    peerId.slice(0, 8),
@@ -160,8 +159,8 @@ export class MessageService {
         const message   = JSON.stringify(payload);
         const signature = signMessage(message, myPrivateKey);
 
-        if (targetPeer.socket.readyState === WebSocket.OPEN) {
-            targetPeer.socket.send(JSON.stringify({ payload, signature }));
+        if (targetPeer.connection.isOpen) {
+            targetPeer.connection.send(JSON.stringify({ payload, signature }));
             return requestId;
         }
 
@@ -190,8 +189,8 @@ export class MessageService {
         const message   = JSON.stringify(payload);
         const signature = signMessage(message, myPrivateKey);
 
-        if (targetPeer.socket.readyState === WebSocket.OPEN) {
-            targetPeer.socket.send(JSON.stringify({ payload, signature }));
+        if (targetPeer.connection.isOpen) {
+            targetPeer.connection.send(JSON.stringify({ payload, signature }));
         } else {
             logger.error(`Cannot send time-sync response — socket not ready`, {
                 peer: targetPeer.peerPublicNodeId.slice(0, 8),

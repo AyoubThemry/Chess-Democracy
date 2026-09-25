@@ -10,12 +10,38 @@ import { randomUUID }             from "crypto";
 import type { Team }              from "../../game/game-state.js";
 import type { GameConfig, SignedVote } from "../../game/voting-state.js";
 import type { TallyClaim }        from "../../game/verify-tally.js";
+import type { GameNetwork, NetworkFactory } from "../game-network.js";
 
-export class LocalNetworkController extends BaseNetworkController {
+export class LocalNetworkController extends BaseNetworkController implements GameNetwork {
     private publisher?:    PublisherService;
     private discoverer?:   DiscoveryService;
     private ghostInterval?: NodeJS.Timeout;
     private pingInterval?:  NodeJS.Timeout;
+    private ownsListener = false;
+
+    /**
+     * The LAN transport as a NetworkFactory: boots a WebSocket server, then
+     * builds the controller on whatever port it got.
+     */
+    static create: NetworkFactory = (ctx, requestedPort) => new Promise(resolve => {
+        const listener = new WebsocketService();
+        listener.on('ready', (boundPort: number) => {
+            const network = new LocalNetworkController(
+                'Chess-Democracy-Local',
+                listener,
+                ctx.identity,
+                boundPort,
+                ctx.getAlivePeersCount,
+                ctx.getAllPeers,
+                ctx.adjustAlivePeersCount,
+                ctx.acceptingConnection,
+                ctx.callbacks,
+            );
+            network.ownsListener = true;
+            resolve({ network, boundPort });
+        });
+        listener.boot(requestedPort);
+    });
 
     constructor(
         private readonly serviceName: string,
@@ -79,6 +105,7 @@ export class LocalNetworkController extends BaseNetworkController {
             this.ghostInterval = undefined;
         }
         this.stopBase();
+        if (this.ownsListener) this.listener.stop();
     }
 
     public getPeers(): Map<string, Peer> {

@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { Peer, PeerData, PeerStatus } from '../network/peer.js';
+import { WebSocketConnection } from '../network/peer-connection.js';
 import { WebSocket } from 'ws';
 
 // Minimal socket stub — only the properties Peer actually uses.
@@ -26,7 +27,7 @@ describe('Peer', () => {
 
     beforeEach(() => {
         socket = makeSocket();
-        peer   = new Peer(sampleData, socket);
+        peer   = new Peer(sampleData, new WebSocketConnection(socket));
     });
 
     it('exposes peerPublicNodeId from PeerData', () => {
@@ -64,7 +65,7 @@ describe('Peer', () => {
 
     it('send() does NOT call socket.send when socket is CLOSED', () => {
         const closedSocket = makeSocket(WebSocket.CLOSED);
-        const closedPeer   = new Peer(sampleData, closedSocket);
+        const closedPeer   = new Peer(sampleData, new WebSocketConnection(closedSocket));
         closedPeer.send({ type: 'ping' });
         expect(closedSocket.send).not.toHaveBeenCalled();
     });

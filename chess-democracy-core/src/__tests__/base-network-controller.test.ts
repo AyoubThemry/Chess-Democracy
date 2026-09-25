@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { EventEmitter } from 'events';
 import { BaseNetworkController } from '../network/base-network-controller.js';
 import { Peer, PeerData, PeerStatus } from '../network/peer.js';
+import { WebSocketConnection } from '../network/peer-connection.js';
 import { WebsocketService } from '../network/websocket-service.js';
 import { getOrCreateIdentity } from '../protocol/generateidentity.js';
 import { signMessage } from '../protocol/verifysignsignature.js';
@@ -193,7 +194,7 @@ describe('BaseNetworkController — ghost detection', () => {
 
         const peer = new Peer(
             { peerPublicNodeId: 'a'.repeat(64), ip: '127.0.0.1', port: 9999 },
-            socket,
+            new WebSocketConnection(socket),
         );
         // Make the peer look stale
         peer.lastSeen = Date.now() - NETWORK_CONFIG.GHOST_TIMEOUT_MS - 1000;
@@ -216,7 +217,7 @@ describe('BaseNetworkController — ghost detection', () => {
 
         const peer = new Peer(
             { peerPublicNodeId: 'b'.repeat(64), ip: '127.0.0.1', port: 9999 },
-            socket,
+            new WebSocketConnection(socket),
         );
         peer.lastSeen = Date.now(); // fresh
         peers = new Map([['b'.repeat(64), peer]]);
