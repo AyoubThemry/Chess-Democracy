@@ -4,6 +4,7 @@ import { WebsocketService }    from "./websocket-service.js";
 import { ConnectorService }    from "./localnetwork/connector-service.js";
 import { MessageService, MessageCallbacks } from "./localnetwork/message-service.js";
 import { PeerData, Peer, PeerStatus } from "./peer.js";
+import { WebSocketConnection } from "./peer-connection.js";
 import { verifySignature }     from "../protocol/verifysignsignature.js";
 import WebSocket               from 'ws';
 import { toError }             from '../utils/errors.js';
@@ -143,8 +144,8 @@ export abstract class BaseNetworkController extends EventEmitter implements INet
             );
 
             if (isAckSent) {
-                const peer = new Peer({ peerPublicNodeId: info.payload.key, ip, port: p }, socket);
-                this.setupMessageHandling(peer);
+                const peer = new Peer({ peerPublicNodeId: info.payload.key, ip, port: p }, new WebSocketConnection(socket));
+                this.setupMessageHandling(peer, socket);
                 this.emit('peer:connected', peer);
                 logger.info(`Inbound peer connected`, { peer: info.payload.key.slice(0, 8), ip });
             }
@@ -154,8 +155,8 @@ export abstract class BaseNetworkController extends EventEmitter implements INet
         }
     }
 
-    private setupMessageHandling(peer: Peer): void {
-        peer.socket.on("close", (code: number, reason: Buffer) => {
+    private setupMessageHandling(peer: Peer, socket: WebSocket): void {
+        socket.on("close", (code: number, reason: Buffer) => {
             logger.info(`Peer socket closed`, {
                 peer:   peer.peerPublicNodeId.slice(0, 8),
                 code,
@@ -168,14 +169,14 @@ export abstract class BaseNetworkController extends EventEmitter implements INet
             this.emit('peer:disconnected', peer);
         });
 
-        peer.socket.on("error", (error: Error) => {
+        socket.on("error", (error: Error) => {
             logger.error(`Peer socket error`, {
                 peer:    peer.peerPublicNodeId.slice(0, 8),
                 message: error.message,
             });
         });
 
-        peer.socket.on("message", (data: Buffer) => {
+        socket.on("message", (data: Buffer) => {
             try {
                 const { payload, signature } = JSON.parse(data.toString("utf8"));
                 MessageService.HandleMessage(
@@ -209,7 +210,9 @@ export abstract class BaseNetworkController extends EventEmitter implements INet
                 this.identity.privateKey,
                 this.port,
             );
-            this.setupMessageHandling(peer);
+            // The connector always builds a WebSocketConnection; this class is the
+            // WebSocket transport, so it's the one place allowed to reach under it.
+            this.setupMessageHandling(peer, (peer.connection as WebSocketConnection).socket);
             this.emit('peer:connected', peer);
             logger.info(`Outbound peer connected`, { peer: peerData.peerPublicNodeId.slice(0, 8) });
         } catch (err: unknown) {
@@ -233,7 +236,7 @@ export abstract class BaseNetworkController extends EventEmitter implements INet
                 onPeerDied(1);
                 logger.warn(`Ghost peer removed`, { peer: id.slice(0, 8) });
                 try {
-                    peer.socket.close();
+                    peer.connection.close();
                 } catch (err: unknown) {
                     logger.error(`Error closing ghost socket`, {
                         peer:    id.slice(0, 8),

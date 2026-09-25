@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { LocalNetworkController } from '../network/localnetwork/local-network-controller.js';
 import { WebsocketService }       from '../network/websocket-service.js';
 import { Peer, PeerData }         from '../network/peer.js';
+import { WebSocketConnection } from '../network/peer-connection.js';
 import { getOrCreateIdentity }    from '../protocol/generateidentity.js';
 import { EventEmitter }           from 'events';
 import { WebSocket }              from 'ws';
@@ -89,7 +90,7 @@ describe('LocalNetworkController — getPeers', () => {
     it('returns the peer map supplied via getAllPeers callback', () => {
         const peer  = new Peer(
             { peerPublicNodeId: 'a'.repeat(64), ip: '127.0.0.1', port: 9001 },
-            makeSocket(),
+            new WebSocketConnection(makeSocket()),
         );
         const peers = new Map([['a'.repeat(64), peer]]);
         const { ctrl } = makeController(peers);
@@ -131,7 +132,7 @@ describe('LocalNetworkController — time master election', () => {
         const higherKey = 'f'.repeat(64); // 'f' > any hex digit → always higher
         const peer = new Peer(
             { peerPublicNodeId: higherKey, ip: '127.0.0.1', port: 9002 },
-            makeSocket(),
+            new WebSocketConnection(makeSocket()),
         );
         const peers = new Map([[higherKey, peer]]);
         const { ctrl } = makeController(peers);
@@ -149,7 +150,7 @@ describe('LocalNetworkController — time master election', () => {
         const socket   = makeSocket();
         const peer     = new Peer(
             { peerPublicNodeId: lowerKey, ip: '127.0.0.1', port: 9002 },
-            socket,
+            new WebSocketConnection(socket),
         );
         const peers = new Map([[lowerKey, peer]]);
         const { ctrl } = makeController(peers);

@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { MessageService }   from '../network/localnetwork/message-service.js';
 import { Peer, PeerStatus, PeerData } from '../network/peer.js';
+import { WebSocketConnection } from '../network/peer-connection.js';
 import { getOrCreateIdentity }        from '../protocol/generateidentity.js';
 import { signMessage, verifySignature } from '../protocol/verifysignsignature.js';
 import { randomUUID }                 from 'crypto';
@@ -21,7 +22,7 @@ function makeSocket(readyState = WebSocket.OPEN): WebSocket {
 
 function makePeer(id: string, socket?: WebSocket): Peer {
     const data: PeerData = { peerPublicNodeId: id, ip: '127.0.0.1', port: 9000 };
-    return new Peer(data, socket ?? makeSocket());
+    return new Peer(data, new WebSocketConnection(socket ?? makeSocket()));
 }
 
 function buildSignedMessage(payload: Record<string, unknown>, privKey: string) {
@@ -173,7 +174,7 @@ describe('MessageService.HandleMessage', () => {
             payload, sig, sender.publicKey,
             peers, receiver.publicKey, receiver.privateKey, makeCallbacks({ setTimeOffset: noop }),
         );
-        expect(peer.socket.send).toHaveBeenCalled();
+        expect((peer.connection as WebSocketConnection).socket.send).toHaveBeenCalled();
     });
 
     it('returns null for an unknown message type', () => {

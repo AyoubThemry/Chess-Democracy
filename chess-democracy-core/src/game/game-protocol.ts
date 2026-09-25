@@ -15,7 +15,6 @@ import { signMessage }      from '../protocol/verifysignsignature.js';
 import { randomUUID }       from 'crypto';
 import { logger }           from '../utils/logger.js';
 import { Team, GameResult } from './game-state.js';
-import { WebSocket }        from 'ws';
 
 // ---------------------------------------------------------------------------
 // Wire format — every game message on the network looks like this:
@@ -42,9 +41,9 @@ function buildPacket(payload: object, privateKey: string): string {
 
 function sendToAll(packet: string, peers: Map<string, Peer>, label: string): void {
     for (const [peerId, peer] of peers) {
-        if (peer.status === PeerStatus.Alive && peer.socket.readyState === WebSocket.OPEN) {
+        if (peer.status === PeerStatus.Alive && peer.connection.isOpen) {
             try {
-                peer.socket.send(packet);
+                peer.connection.send(packet);
             } catch (err) {
                 logger.error(`Failed to send ${label}`, {
                     peer:    peerId.slice(0, 8),

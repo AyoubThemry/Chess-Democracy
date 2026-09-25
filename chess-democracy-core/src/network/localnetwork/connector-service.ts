@@ -1,5 +1,6 @@
 import { WebSocket }               from "ws";
 import { Peer, PeerData }          from "../peer.js";
+import { WebSocketConnection }     from "../peer-connection.js";
 import { signMessage, verifySignature } from "../../protocol/verifysignsignature.js";
 import { randomUUID }              from "crypto";
 import { toError }                 from "../../utils/errors.js";
@@ -36,7 +37,7 @@ export class ConnectorService {
                     const isValid = verifySignature(msgStr, info.signature, peerData.peerPublicNodeId);
 
                     if (isAck && isValid) {
-                        cleanup(() => resolve(new Peer(peerData, socket)));
+                        cleanup(() => resolve(new Peer(peerData, new WebSocketConnection(socket))));
                     } else {
                         cleanup(() => { socket.close(); reject(new Error("Invalid handshake ACK")); });
                     }

@@ -1,45 +1,53 @@
-// Extra node tests covering the boot path that requires a running WebSocket service.
-// Kept separate from node.test.ts because those tests mock the entire service layer.
+// Node's boot path: it asks its network factory for a transport, starts it,
+// and wires up peer events. A fake transport stands in, so no sockets open.
 import { describe, it, expect, vi } from 'vitest';
+import { EventEmitter } from 'events';
 import { Node } from '../core/node.js';
+import type { GameNetwork, NetworkFactory } from '../network/game-network.js';
 
-vi.mock('../network/websocket-service.js', () => ({
-    WebsocketService: class {
-        _cbs: Record<string, Function[]> = {};
-        boot  = vi.fn((port: number) => {
-            // Immediately simulate "ready" so boot() completes synchronously in tests
-            setTimeout(() => this._cbs['ready']?.forEach(fn => fn(port || 9000)), 0);
-        });
-        stop  = vi.fn();
-        on    = vi.fn((ev: string, fn: Function) => { (this._cbs[ev] ??= []).push(fn); });
-        once  = vi.fn();
-        emit  = vi.fn();
-    },
-}));
+function fakeTransport() {
+    const network = Object.assign(new EventEmitter(), { start: vi.fn(), stop: vi.fn() }) as unknown as GameNetwork;
+    const factory = vi.fn<NetworkFactory>(async () => ({ network, boundPort: 9123 }));
+    return { network, factory };
+}
 
-vi.mock('../network/localnetwork/local-network-controller.js', () => ({
-    LocalNetworkController: class {
-        on            = vi.fn();
-        start         = vi.fn();
-        stop          = vi.fn();
-        broadcastReady = vi.fn();
-        sync          = vi.fn();
-    },
-}));
+const settle = () => new Promise(r => setImmediate(r));
 
 describe('Node — boot and stop lifecycle', () => {
-    it('boot() calls service.boot with the given port', () => {
-        const node = new Node();
-        node.boot(9500);
-        expect((node as any).service.boot).toHaveBeenCalledWith(9500);
+    it('boot() hands the requested port to the network factory', () => {
+        const { factory } = fakeTransport();
+        new Node(undefined, factory).boot(9500);
+        expect(factory).toHaveBeenCalledWith(expect.anything(), 9500);
     });
 
-    it('stop() clears the peer map', async () => {
-        const node = new Node();
+    it('starts the transport and reports the port it got', async () => {
+        const { network, factory } = fakeTransport();
+        const node = new Node(undefined, factory);
         node.boot(0);
-        await new Promise(r => setTimeout(r, 10)); // let "ready" fire
+        await settle();
+        expect(network.start).toHaveBeenCalledOnce();
+        expect(node.boundPort).toBe(9123);
+        expect(node.network).toBe(network);
+    });
+
+    it('stop() stops the transport and clears the peer map', async () => {
+        const { network, factory } = fakeTransport();
+        const node = new Node(undefined, factory);
+        node.boot(0);
+        await settle();
         node.stop();
+        expect(network.stop).toHaveBeenCalledOnce();
         expect(node.allPeers.size).toBe(0);
+    });
+
+    it('a transport that finishes starting after stop() is shut down, not used', async () => {
+        const { network, factory } = fakeTransport();
+        const node = new Node(undefined, factory);
+        node.boot(0);
+        node.stop();          // before the factory's promise resolves
+        await settle();
+        expect(network.start).not.toHaveBeenCalled();
+        expect(network.stop).toHaveBeenCalledOnce();
     });
 
     it('each Node instance has an independent peer count', () => {
