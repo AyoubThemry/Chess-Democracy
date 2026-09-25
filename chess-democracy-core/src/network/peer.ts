@@ -28,6 +28,11 @@ export class Peer {
         return this.data.peerPublicNodeId;
     }
 
+    /** Where to reach this peer again if the connection drops. */
+    public get peerData(): PeerData {
+        return this.data;
+    }
+
     public get PeerIp(): string {
         return this.data.ip;
     }

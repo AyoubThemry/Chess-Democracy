@@ -11,12 +11,14 @@ import type { Team }              from "../../game/game-state.js";
 import type { GameConfig, SignedVote } from "../../game/voting-state.js";
 import type { TallyClaim }        from "../../game/verify-tally.js";
 import type { GameNetwork, NetworkFactory } from "../game-network.js";
+import type { GameSnapshot }      from "../../game/snapshot.js";
 
 export class LocalNetworkController extends BaseNetworkController implements GameNetwork {
     private publisher?:    PublisherService;
     private discoverer?:   DiscoveryService;
     private ghostInterval?: NodeJS.Timeout;
     private pingInterval?:  NodeJS.Timeout;
+    private readonly reconnecting = new Map<string, NodeJS.Timeout>();
     private ownsListener = false;
 
     /**
@@ -51,7 +53,7 @@ export class LocalNetworkController extends BaseNetworkController implements Gam
         protected readonly getTotalAlivePeersCount:   () => number,
         protected readonly getAllPeers:               () => Map<string, Peer>,
         private   readonly adjustAlivePeersCount:     (sign: '+' | '-', amount: number) => void,
-        protected readonly acceptingConnectionStatus: () => boolean,
+        protected readonly acceptingConnectionStatus: (peerKey?: string) => boolean,
         private   readonly callbacks:                 MessageCallbacks,
     ) {
         super(listener, identity, port, getTotalAlivePeersCount, getAllPeers, acceptingConnectionStatus);
@@ -70,6 +72,8 @@ export class LocalNetworkController extends BaseNetworkController implements Gam
 
         this.discoverer.start(this.serviceName);
 
+        this.on('peer:disconnected', (peer: Peer) => this.scheduleReconnect(peer));
+
         // Ghost detection reads peer.lastSeen, which only advances when a peer
         // sends something. Without this heartbeat an idle lobby would drop
         // every peer once GHOST_TIMEOUT_MS passed with nobody clicking.
@@ -85,10 +89,7 @@ export class LocalNetworkController extends BaseNetworkController implements Gam
         this.pingInterval.unref();
 
         this.ghostInterval = setInterval(() => {
-            this.removeGhosts(
-                this.getAllPeers(),
-                (count) => this.adjustAlivePeersCount("-", count),
-            );
+            this.removeGhosts(this.getAllPeers());
         }, NETWORK_CONFIG.GHOST_TIMEOUT_MS / 3);
         this.ghostInterval.unref();
     }
@@ -106,6 +107,36 @@ export class LocalNetworkController extends BaseNetworkController implements Gam
         }
         this.stopBase();
         if (this.ownsListener) this.listener.stop();
+        for (const timer of this.reconnecting.values()) clearInterval(timer);
+        this.reconnecting.clear();
+    }
+
+    /**
+     * A peer dropped. On a LAN nothing brings the connection back by itself,
+     * since mDNS doesn't announce the peer again, so retry for a while.
+     *
+     * Only the side with the lower key retries. If both did, their two new
+     * connections would keep replacing each other.
+     */
+    private scheduleReconnect(peer: Peer): void {
+        const key = peer.peerPublicNodeId;
+        if (this.identity.publicKey > key || this.reconnecting.has(key)) return;
+
+        let attempts = 0;
+        const timer = setInterval(() => {
+            attempts++;
+            const done = this.getAllPeers().has(key)
+                      || !this.acceptingConnectionStatus(key)
+                      || attempts > NETWORK_CONFIG.RECONNECT_ATTEMPTS;
+            if (done) {
+                clearInterval(timer);
+                this.reconnecting.delete(key);
+                return;
+            }
+            void this.connectToPeer(peer.peerData);
+        }, NETWORK_CONFIG.RECONNECT_INTERVAL_MS);
+        timer.unref();
+        this.reconnecting.set(key, timer);
     }
 
     public getPeers(): Map<string, Peer> {
@@ -188,6 +219,15 @@ export class LocalNetworkController extends BaseNetworkController implements Gam
             this.getAllPeers(),
             this.identity,
         ) as unknown as SignedVote;
+    }
+
+    public sendGameSnapshotToPeer(snapshot: GameSnapshot, peer: Peer): void {
+        MessageService.broadcast(
+            { type: 'game_snapshot', ...snapshot },
+            this.getAllPeers(),
+            this.identity,
+            p => p.peerPublicNodeId === peer.peerPublicNodeId,
+        );
     }
 
     public broadcastTallyResult(claim: TallyClaim): void {

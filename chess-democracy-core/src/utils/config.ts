@@ -11,6 +11,8 @@ export const NETWORK_CONFIG = {
     TIME_SKEW_TOLERANCE_MS: 30000,     // 30s – used in handshake timestamp check (was 120 s inline magic number)
     MAX_HANDSHAKES_PER_MIN: 20,        // rate-limit guard
     NONCE_TTL_MS: 300_000,             // 5 min – how long a seen nonce is remembered to block replays
+    RECONNECT_INTERVAL_MS: 3_000,      // how often to retry a dropped peer
+    RECONNECT_ATTEMPTS: 20,            // give up after ~1 min
 } as const;
 
 export const GAME_CONFIG = {
@@ -19,6 +21,7 @@ export const GAME_CONFIG = {
     GAME_START_COUNTDOWN_MS: 10_000,  // countdown from all-ready to game-begin
     MOVE_TIMEOUT_MS:        120_000,  // 2 min hard cap per turn, spanning any revotes
     MOVE_TIMEOUT_SLACK_MS:    5_000,  // how early a peer's timeout claim may arrive (clock drift)
+    RESYNC_GRACE_MS:          2_000,  // after a player reconnects, wait this long before counting votes
 } as const;
 
 export const VOTE_CONFIG = {

@@ -6,6 +6,20 @@ import { randomUUID }              from "crypto";
 import { toError }                 from "../../utils/errors.js";
 import { logger }                  from "../../utils/logger.js";
 
+/**
+ * A peer address as it has to appear in a ws:// URL.
+ *
+ * A peer that connected to us is known by what its socket reported, and
+ * Node reports IPv4 as '::ffff:192.168.1.5'. Pasted into a URL that's
+ * invalid, so reconnecting to such a peer always failed. Real IPv6 needs
+ * brackets.
+ */
+export function hostForUrl(ip: string): string {
+    const mapped = /^::ffff:(\d{1,3}(?:\.\d{1,3}){3})$/i.exec(ip);
+    if (mapped) return mapped[1];
+    return ip.includes(':') ? `[${ip}]` : ip;
+}
+
 export class ConnectorService {
     public async connect(
         peerData:   PeerData,
@@ -14,7 +28,7 @@ export class ConnectorService {
         port:       number,
     ): Promise<Peer> {
         return new Promise((resolve, reject) => {
-            const socket = new WebSocket(`ws://${peerData.ip}:${peerData.port}`);
+            const socket = new WebSocket(`ws://${hostForUrl(peerData.ip)}:${peerData.port}`);
             let handshakeTimeout: NodeJS.Timeout;
 
             const cleanup = (action: () => void) => {

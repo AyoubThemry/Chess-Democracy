@@ -3,6 +3,7 @@ import type { Peer, PeerData } from './peer.js';
 import type { Team } from '../game/game-state.js';
 import type { GameConfig, SignedVote } from '../game/voting-state.js';
 import type { TallyClaim } from '../game/verify-tally.js';
+import type { GameSnapshot } from '../game/snapshot.js';
 import type { MessageCallbacks } from './localnetwork/message-service.js';
 
 /**
@@ -33,6 +34,8 @@ export interface GameNetwork extends EventEmitter {
     /** Returns the vote as signed, so the master can forward it in its tally. */
     broadcastVote(turnIndex: number, round: number, move: string, timestamp: number): SignedVote;
     broadcastTallyResult(claim: TallyClaim): void;
+    /** Where the game stands, for a player who just reconnected. */
+    sendGameSnapshotToPeer(snapshot: GameSnapshot, peer: Peer): void;
     broadcastResignVoteToTeam(team: Team): void;
     broadcastDrawOffer(): void;
     broadcastDrawResponse(accepted: boolean): void;
@@ -48,7 +51,8 @@ export interface NetworkContext {
     getAllPeers:           () => Map<string, Peer>;
     getAlivePeersCount:    () => number;
     adjustAlivePeersCount: (sign: '+' | '-', amount: number) => void;
-    acceptingConnection:   () => boolean;
+    /** No key: could anyone connect right now? With a key: may this peer? */
+    acceptingConnection:   (peerKey?: string) => boolean;
 }
 
 /**

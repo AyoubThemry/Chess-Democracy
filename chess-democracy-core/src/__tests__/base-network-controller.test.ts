@@ -187,7 +187,7 @@ describe('BaseNetworkController — handshake validation', () => {
 });
 
 describe('BaseNetworkController — ghost detection', () => {
-    it('marks a timed-out peer as Dead and calls onPeerDied', () => {
+    it('marks a timed-out peer as Dead and reports it as disconnected, once', () => {
         const listener   = makeListenerStub();
         const controller = new TestController(listener);
         const socket     = makeSocket();
@@ -200,11 +200,15 @@ describe('BaseNetworkController — ghost detection', () => {
         peer.lastSeen = Date.now() - NETWORK_CONFIG.GHOST_TIMEOUT_MS - 1000;
         peers = new Map([['a'.repeat(64), peer]]);
 
-        const died = vi.fn();
+        const disconnected = vi.fn();
+        controller.on('peer:disconnected', disconnected);
         // Access protected via cast
-        (controller as any).removeGhosts(peers, died);
+        (controller as any).removeGhosts(peers);
+        (controller as any).removeGhosts(peers);   // a second sweep must not report it again
 
-        expect(died).toHaveBeenCalledWith(1);
+        // Node owns the peer map and does the bookkeeping on this event.
+        expect(disconnected).toHaveBeenCalledOnce();
+        expect(disconnected).toHaveBeenCalledWith(peer);
         expect(peer.status).toBe(PeerStatus.Dead);
         expect(socket.close).toHaveBeenCalled();
         controller.stop();
@@ -222,10 +226,11 @@ describe('BaseNetworkController — ghost detection', () => {
         peer.lastSeen = Date.now(); // fresh
         peers = new Map([['b'.repeat(64), peer]]);
 
-        const died = vi.fn();
-        (controller as any).removeGhosts(peers, died);
+        const disconnected = vi.fn();
+        controller.on('peer:disconnected', disconnected);
+        (controller as any).removeGhosts(peers);
 
-        expect(died).not.toHaveBeenCalled();
+        expect(disconnected).not.toHaveBeenCalled();
         expect(peer.status).toBe(PeerStatus.Alive);
         controller.stop();
     });
