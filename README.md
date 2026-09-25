@@ -74,7 +74,17 @@ No single player can unilaterally resign. Clicking Resign casts a yes vote. Once
 
 ### Draw protocol
 
-Any player can offer a draw. Opponents see a banner and accept or decline. Accepting broadcasts `game_over` with reason `draw_agreement`.
+Any player can offer a draw. Only the other side can accept it: opponents see a banner with Accept and Decline, teammates of the player who offered just get told about it. Accepting broadcasts `game_over` with reason `draw_agreement`, and nodes refuse one if no draw was offered or if it comes from the side that offered.
+
+### Dropped connections
+
+When a game starts, its players are fixed. From then on only those players can connect, so another copy of the app starting on the same network can't wander into the game.
+
+Votes are only counted while more than half the players are connected. A player who loses their connection waits rather than carrying on alone, which would give them a game of their own that couldn't be merged back.
+
+On a LAN the player with the lower key keeps retrying a dropped connection for about a minute. When a player comes back, both sides send each other a snapshot: the moves so far, the open vote window, and the signed votes already cast in it. Whoever is behind replays the moves they missed and picks up the votes, each checked like any other forwarded vote. If the two histories disagree instead of one lagging, the game stops as out of sync.
+
+Snapshot moves are checked for legality but not re-proven with the votes that chose them, so a returning player trusts whoever is ahead. Among friends that's fine.
 
 ### Move timeout
 
@@ -230,6 +240,8 @@ Messages are JSON, broadcast over TCP to all connected peers. Each message is wr
 | `config_accepted` | broadcast | Accept the current config version |
 | `vote` | broadcast | Cast a move vote during voting window |
 | `tally_result` | broadcast (master only) | Winning move plus every signed vote counted, so others can recount |
+| `game_snapshot` | to one peer | Moves so far, the open window and its votes, for a player who just reconnected |
+| `ping` | broadcast | Keepalive, so an idle player isn't dropped as gone |
 | `move` | broadcast | Committed move (after tally) |
 | `game_over` | broadcast | Game ended — includes result & reason |
 | `draw_offer` | broadcast | Offer a draw |
@@ -273,6 +285,18 @@ Diagrams use [Mermaid](https://mermaid.js.org/) and render natively on GitHub.
 > Contributions toward Phase 2 are very welcome — see [Contributing](#contributing) below.
 
 ---
+
+## Adding a transport
+
+The game doesn't know it's running over WebSockets and mDNS. `Node` takes a `NetworkFactory` and talks to the `GameNetwork` interface in `chess-democracy-core/src/network/game-network.ts`; the LAN version is `LocalNetworkController.create`, the default.
+
+A different transport, such as one that works across the internet, needs to:
+
+- implement `GameNetwork`: the broadcast methods, `sync`, and `peer:connected` / `peer:disconnected` events
+- give each peer a `PeerConnection` (`isOpen`, `send`, `close`) instead of a WebSocket
+- deliver inbound packets to the `MessageCallbacks` it's created with, through `MessageService.HandleMessage` so signatures and replay protection still apply
+
+Then pass it in: `new Node(identityPath, myTransport)`. Voting, verification, resync and the UI all work unchanged.
 
 ## Contributing
 
