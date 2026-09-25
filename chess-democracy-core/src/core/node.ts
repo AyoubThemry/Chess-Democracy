@@ -5,7 +5,7 @@ import { loadOrCreateIdentity }    from "../protocol/identity-store.js";
 import { getOrCreateIdentity }     from "../protocol/generateidentity.js";
 import { GAME_CONFIG, VOTE_CONFIG } from "../utils/config.js";
 import { logger }                  from "../utils/logger.js";
-import { GameState, checkTeamBalance, Team } from "../game/game-state.js";
+import { GameState, checkTeamBalance, Team, GameResult } from "../game/game-state.js";
 import { VotingState, GameConfig, DEFAULT_GAME_CONFIG } from "../game/voting-state.js";
 import {
     sendGameStart,
@@ -63,6 +63,7 @@ export class Node extends EventEmitter {
     private _voting:          VotingState | null = null;
     private _voteTimer?:      NodeJS.Timeout;
     private _moveTimeoutTimer?: NodeJS.Timeout;
+    private _moveTimeoutStartedAt = 0;
     private _gameMode:        'direct' | 'voting' = 'voting';
 
     // Resign vote state
@@ -581,6 +582,7 @@ export class Node extends EventEmitter {
 
         // Per-turn timeout: if no move is committed within MOVE_TIMEOUT_MS, end the game.
         clearTimeout(this._moveTimeoutTimer);
+        this._moveTimeoutStartedAt = this.getSynchronizedTime();
         this._moveTimeoutTimer = setTimeout(() => {
             if (this.game.phase !== 'in_progress') return;
             logger.warn(`Move timeout on turn ${turnIndex} — ending game`);
@@ -802,19 +804,56 @@ export class Node extends EventEmitter {
         }
     }
 
-    private handleGameOver(msg: Record<string, unknown>, senderKey: string): void {
-        if (this.game.phase === 'finished') return;
+    /**
+     * Returns why a peer's game_over should be ignored, or null to accept it.
+     *
+     * Peers only ever send three kinds: a draw they accepted, a move timeout,
+     * and their own side's resignation. Checkmate, stalemate and running out
+     * of revotes are never sent. Every node reaches those itself when it
+     * applies the move, so a peer claiming one is either lying or out of sync.
+     */
+    private rejectGameOver(msg: Record<string, unknown>, senderKey: string): string | null {
+        if (this.game.phase !== 'in_progress') return 'not_in_progress';
+        if (msg.gameId !== this.game.gameId)   return 'wrong_game';
 
-        const result = msg.result as { winner: string; reason: string } | undefined;
-        if (!result) {
-            logger.warn(`Invalid game_over message`, { sender: senderKey.slice(0, 8) });
+        const result     = msg.result as { winner?: unknown; reason?: unknown } | undefined;
+        const senderTeam = this.allPeers.get(senderKey)?.team ?? null;
+
+        switch (result?.reason) {
+            case 'draw_agreement':
+                return result.winner === 'draw' ? null : 'draw_with_a_winner';
+
+            case 'timeout': {
+                if (result.winner !== null) return 'timeout_with_a_winner';
+                // Every node runs the same per-turn timer, so ours should be
+                // about to fire too. Otherwise the claim is early.
+                const elapsed = this.getSynchronizedTime() - this._moveTimeoutStartedAt;
+                return elapsed >= GAME_CONFIG.MOVE_TIMEOUT_MS - GAME_CONFIG.MOVE_TIMEOUT_SLACK_MS
+                    ? null
+                    : 'timeout_too_early';
+            }
+
+            case 'resignation': {
+                // You can only resign for your own side.
+                if (senderTeam !== 'white' && senderTeam !== 'black') return 'unknown_sender';
+                const opponent = senderTeam === 'white' ? 'black' : 'white';
+                return result.winner === opponent ? null : 'resigned_for_the_other_side';
+            }
+
+            default:
+                return 'reason_peers_never_send';
+        }
+    }
+
+    private handleGameOver(msg: Record<string, unknown>, senderKey: string): void {
+        const rejected = this.rejectGameOver(msg, senderKey);
+        if (rejected) {
+            logger.warn(`game_over from peer ignored`, { sender: senderKey.slice(0, 8), reason: rejected });
             return;
         }
 
-        this.game.finish({
-            winner: result.winner as any,
-            reason: result.reason as any,
-        });
+        const result = msg.result as GameResult;
+        this.game.finish({ winner: result.winner, reason: result.reason });
 
         // Clear resign vote if one was open
         if (this._resignVote) {

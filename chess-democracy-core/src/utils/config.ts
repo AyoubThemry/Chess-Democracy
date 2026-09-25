@@ -18,6 +18,7 @@ export const GAME_CONFIG = {
     READY_TIMEOUT_MS:        30_000,  // abort if not all peers ready within this
     GAME_START_COUNTDOWN_MS: 10_000,  // countdown from all-ready to game-begin
     MOVE_TIMEOUT_MS:        120_000,  // 2 min hard cap per turn, spanning any revotes
+    MOVE_TIMEOUT_SLACK_MS:    5_000,  // how early a peer's timeout claim may arrive (clock drift)
 } as const;
 
 export const VOTE_CONFIG = {
