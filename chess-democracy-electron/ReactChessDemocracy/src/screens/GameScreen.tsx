@@ -58,6 +58,7 @@ const RESULT_LABELS: Record<string, string> = {
     draw_agreement:    'Draw by agreement',
     revotes_exhausted: 'No consensus — voting exhausted',
     timeout:           'Move timeout — 2 min exceeded',
+    desync:            'Stopped: the players got out of sync',
 };
 
 function EndGameOverlay({
@@ -69,7 +70,10 @@ function EndGameOverlay({
 
     const won  = result.winner === myTeam;
     const draw = result.winner === 'draw' || result.winner === null;
-    const headline = draw ? 'Draw' : won ? 'You won!' : 'You lost';
+    const headline = result.winner === null ? 'Game over'
+                   : draw                   ? 'Draw'
+                   : won                    ? 'You won!'
+                   :                          'You lost';
 
     return (
         <div className="end-overlay">

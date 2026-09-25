@@ -9,7 +9,7 @@
  * Run via:  npm run test:integration
  */
 
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
 import { Node } from '../../core/node.js';
 import os from 'node:os';
 import path from 'node:path';
@@ -175,7 +175,13 @@ describe('Two-node integration', () => {
         expect(ev.peerId).toBe(whiteNode.identity.publicKey);
     }, 8_000);
 
-    it('tally fires and both nodes apply the same move', async () => {
+    it('the master counts, the other node verifies, both apply the same move', async () => {
+        // Lowest public key is the master. The other node must not count on its
+        // own; it has to receive the master's signed result and check it.
+        const [masterNode, otherNode] =
+            nodeA.identity.publicKey < nodeB.identity.publicKey ? [nodeA, nodeB] : [nodeB, nodeA];
+        const verified = vi.spyOn(otherNode as any, 'handleTallyResult');
+
         const tallyOnA = waitForEvent(nodeA, 'tally:done', 40_000);
         const tallyOnB = waitForEvent(nodeB, 'tally:done', 40_000);
 
@@ -184,6 +190,13 @@ describe('Two-node integration', () => {
         expect(tB.move).toBe('e2e4');
         expect(tA.fen).toBe(tB.fen);
         expect(tA.turnIndex).toBe(0);
+
+        expect(verified).toHaveBeenCalledWith(masterNode.identity.publicKey, expect.objectContaining({
+            move:  'e2e4',
+            votes: [expect.objectContaining({ payload: expect.objectContaining({ move: 'e2e4' }) })],
+        }));
+        expect(otherNode.gameState.phase).toBe('in_progress');   // not stopped as out of sync
+        expect(masterNode.gameState.phase).toBe('in_progress');
     }, 45_000);
 
 });

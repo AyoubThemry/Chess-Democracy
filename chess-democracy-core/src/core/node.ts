@@ -6,7 +6,8 @@ import { getOrCreateIdentity }     from "../protocol/generateidentity.js";
 import { GAME_CONFIG, VOTE_CONFIG } from "../utils/config.js";
 import { logger }                  from "../utils/logger.js";
 import { GameState, checkTeamBalance, Team, GameResult } from "../game/game-state.js";
-import { VotingState, GameConfig, DEFAULT_GAME_CONFIG } from "../game/voting-state.js";
+import { VotingState, GameConfig, DEFAULT_GAME_CONFIG, TallyResult, tallyMoves } from "../game/voting-state.js";
+import { verifyTally, TallyClaim } from "../game/verify-tally.js";
 import {
     sendGameStart,
     sendMove,
@@ -181,7 +182,9 @@ export class Node extends EventEmitter {
         const result = this._voting.castVote(this.identity.publicKey, uciMove, now);
         if (result !== 'ok') return `error:${result}`;
 
-        this.localNetwork?.broadcastVote(this._voting.turnIndex, uciMove, now);
+        // Keep the signed copy: if we end up as master, it goes in the tally.
+        const signed = this.localNetwork?.broadcastVote(this._voting.turnIndex, this._voting.round, uciMove, now);
+        if (signed) this._voting.attachSigned(this.identity.publicKey, signed);
         this.emit('vote:received', {
             peerId:    this.identity.publicKey,
             turnIndex: this._voting.turnIndex,
@@ -331,11 +334,15 @@ export class Node extends EventEmitter {
                     }
                 },
 
-                onVote: (senderKey, turnIndex, move, timestamp) => {
-                    if (!this._voting || this._voting.turnIndex !== turnIndex) {
+                onTallyResult: (senderKey, claim) => this.handleTallyResult(senderKey, claim),
+
+                onVote: (senderKey, turnIndex, round, move, _timestamp, signed) => {
+                    if (!this._voting || this._voting.turnIndex !== turnIndex || this._voting.round !== round) {
                         logger.warn(`Vote for wrong/inactive window`, {
                             turnIndex,
-                            activeTurn: this._voting?.turnIndex,
+                            round,
+                            activeTurn:  this._voting?.turnIndex,
+                            activeRound: this._voting?.round,
                         });
                         return;
                     }
@@ -356,7 +363,7 @@ export class Node extends EventEmitter {
                         return;
                     }
 
-                    const result = this._voting.castVote(senderKey, move, this.getSynchronizedTime());
+                    const result = this._voting.castVote(senderKey, move, this.getSynchronizedTime(), signed);
                     if (result === 'ok') {
                         logger.info(`Peer vote recorded`, { peer: senderKey.slice(0, 8), move, turnIndex });
                         this.emit('vote:received', { peerId: senderKey, turnIndex, move });
@@ -577,7 +584,7 @@ export class Node extends EventEmitter {
 
         const tallyTime = windowCloseAt + VOTE_CONFIG.VOTE_GRACE_MS;
         const delay     = Math.max(0, tallyTime - this.getSynchronizedTime());
-        this._voteTimer = setTimeout(() => this.runTally(), delay);
+        this._voteTimer = setTimeout(() => this.onTallyDue(), delay);
 
         // Per-turn timeout: if no move is committed within MOVE_TIMEOUT_MS, end the game.
         clearTimeout(this._moveTimeoutTimer);
@@ -615,16 +622,123 @@ export class Node extends EventEmitter {
         });
     }
 
-    private runTally(): void {
+    // Counting
+    //
+    // Every node used to count whatever votes it happened to receive. Two
+    // nodes with different vote sets played different moves and the game
+    // silently stopped (#24). Now only the master counts. It publishes the
+    // result together with every signed vote it counted, and every other node
+    // checks the signatures and recounts before applying it.
+
+    /**
+     * The window has closed. The master counts; everyone else waits for its
+     * result. If the master has gone quiet, whoever is master by the next
+     * check takes over, since every node already holds every vote.
+     */
+    private onTallyDue(): void {
+        if (!this._voting) return;
+        if (this.masterKey() === this.identity.publicKey) {
+            this.countAndPublish();
+            return;
+        }
+        this._voteTimer = setTimeout(() => this.onTallyDue(), VOTE_CONFIG.TALLY_WAIT_MS);
+    }
+
+    private countAndPublish(): void {
+        const voting = this._voting!;
+        const votes  = voting.signedVotes();
+        // Count exactly the list we publish, so everyone recounts the same thing.
+        const result = tallyMoves(votes.map(v => v.payload.move));
+
+        this.localNetwork?.broadcastTallyResult({
+            turnIndex: voting.turnIndex,
+            round:     voting.round,
+            fenBefore: this.game.fen,
+            outcome:   result.outcome,
+            move:      result.outcome === 'winner' ? result.move : null,
+            votes,
+        });
+        logger.info(`Tally published`, {
+            turnIndex: voting.turnIndex,
+            round:     voting.round,
+            outcome:   result.outcome,
+            votes:     votes.length,
+        });
+
+        this.applyTally(result);
+    }
+
+    private handleTallyResult(senderKey: string, claim: TallyClaim): void {
+        if (this.game.phase !== 'in_progress' || !this._voting) return;
+
+        if (senderKey !== this.masterKey()) {
+            logger.warn(`tally_result from a peer that isn't the master ignored`, { sender: senderKey.slice(0, 8) });
+            return;
+        }
+        if (claim.turnIndex !== this._voting.turnIndex || claim.round !== this._voting.round) {
+            logger.debug(`Stale tally_result ignored`, { turnIndex: claim.turnIndex, round: claim.round });
+            return;
+        }
+
+        const verdict = verifyTally(claim, {
+            turnIndex:  this._voting.turnIndex,
+            round:      this._voting.round,
+            fen:        this.game.fen,
+            sideToMove: this.game.currentTurn,
+            legalMoves: this.game.legalMoves,
+            teamOf:     key => this.teamOf(key),
+        });
+        if (!verdict.ok) {
+            this.stopOutOfSync(verdict.reason, senderKey);
+            return;
+        }
+
+        clearTimeout(this._voteTimer);
+        this._voteTimer = undefined;
+        this.applyTally(verdict.result);
+    }
+
+    private teamOf(publicKey: string): Team | null {
+        if (publicKey === this.identity.publicKey) return this.game.myTeam;
+        return (this.allPeers.get(publicKey)?.team ?? null) as Team | null;
+    }
+
+    /**
+     * The master's result didn't check out, or our position no longer matches
+     * its. Carrying on would mean playing a different game from everyone else,
+     * so end it and say why instead of freezing.
+     */
+    private stopOutOfSync(reason: string, masterKey: string): void {
+        logger.error(`Master's tally rejected, stopping the game`, { master: masterKey.slice(0, 8), reason });
+
+        this.game.finish({ winner: null, reason: 'desync' });
+        if (this._resignVote) {
+            clearTimeout(this._resignVote.timer);
+            this._resignVote = null;
+        }
+        clearTimeout(this._voteTimer);
+        clearTimeout(this._moveTimeoutTimer);
+        this._voteTimer        = undefined;
+        this._moveTimeoutTimer = undefined;
+        this._voting           = null;
+
+        this.emit('game:over', {
+            gameId:    this.game.gameId,
+            result:    this.game.result!,
+            lastFen:   this.game.fen,
+            moveCount: this.game.moveHistory.length,
+        });
+    }
+
+    private applyTally(result: TallyResult): void {
         if (!this._voting) return;
 
         const voting = this._voting;
-        const result = voting.tally();
 
-        logger.info(`Tallying votes`, {
-            turnIndex:   voting.turnIndex,
-            voteCount:   voting.voteCount,
-            outcome:     result.outcome,
+        logger.info(`Applying tally`, {
+            turnIndex: voting.turnIndex,
+            round:     voting.round,
+            outcome:   result.outcome,
         });
 
         if (result.outcome === 'no_votes' || result.outcome === 'no_majority') {
@@ -713,7 +827,7 @@ export class Node extends EventEmitter {
         this._voting.openRevote(newWindowCloseAt);
 
         const delay = Math.max(0, newWindowCloseAt + VOTE_CONFIG.VOTE_GRACE_MS - this.getSynchronizedTime());
-        this._voteTimer = setTimeout(() => this.runTally(), delay);
+        this._voteTimer = setTimeout(() => this.onTallyDue(), delay);
 
         logger.info(`Re-vote opened`, {
             turnIndex:   this._voting.turnIndex,

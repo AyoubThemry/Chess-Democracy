@@ -1,6 +1,6 @@
 {
   "name": "chess-democracy",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Peer-to-peer multiplayer chess with democratic move voting",
   "author": "Ayoub Themry",
   "license": "MIT",

@@ -4,7 +4,8 @@ import { randomUUID }              from "crypto";
 import { NETWORK_CONFIG }          from "../../utils/config.js";
 import { logger }                  from "../../utils/logger.js";
 import type { Team, GameResult }   from "../../game/game-state.js";
-import type { GameConfig }         from "../../game/voting-state.js";
+import type { GameConfig, SignedVote } from "../../game/voting-state.js";
+import type { TallyClaim }         from "../../game/verify-tally.js";
 import WebSocket                   from "ws";
 // Node is intentionally NOT imported here.
 // The time-offset callback is injected at call time to avoid a circular
@@ -69,7 +70,8 @@ export interface MessageCallbacks {
     onUnready:        (senderKey: string) => void;
     onConfigProposal: (senderKey: string, config: GameConfig, version: number) => void;
     onConfigAccept:   (senderKey: string, version: number) => void;
-    onVote:           (senderKey: string, turnIndex: number, move: string, timestamp: number) => void;
+    onVote:           (senderKey: string, turnIndex: number, round: number, move: string, timestamp: number, signed: SignedVote) => void;
+    onTallyResult:    (senderKey: string, claim: TallyClaim) => void;
     onDrawOffer:      (senderKey: string) => void;
     onDrawResponse:   (senderKey: string, accepted: boolean) => void;
     onResignVote:     (senderKey: string) => void;
@@ -81,11 +83,18 @@ type OutboundMessage =
   | { type: 'side_choice';     team: Team; request_id: string; client_time: number }
   | { type: 'config_proposal'; config: GameConfig; version: number }
   | { type: 'config_accept';   version: number }
-  | { type: 'vote';            turnIndex: number; move: string; timestamp: number }
+  | { type: 'vote';            turnIndex: number; round: number; move: string; timestamp: number }
+  | ({ type: 'tally_result' } & TallyClaim)
   | { type: 'draw_offer' }
   | { type: 'draw_response';   accepted: boolean }
   | { type: 'resign_vote' }
   | { type: 'ping' };
+
+/** A packet as it went out: the payload and its signature. */
+export interface SignedPacket {
+    payload:   Record<string, unknown>;
+    signature: string;
+}
 
 // ---------------------------------------------------------------------------
 // MessageService
@@ -98,13 +107,15 @@ export class MessageService {
      * The helper owns only the envelope fields (`key`, `timestamp`, `nonce`);
      * everything else comes from `msg`, so it never branches on message type.
      * `filter` narrows an already-live set — it can never widen it.
+     *
+     * Returns what was signed, so a vote can later be forwarded as-is.
      */
     public static broadcast(
         msg:     OutboundMessage,
         peers:   Map<string, Peer>,
         keys:    { publicKey: string; privateKey: string },
         filter?: (peer: Peer) => boolean,
-    ): void {
+    ): SignedPacket {
         const payload = {
             key:       keys.publicKey,
             ...msg,
@@ -128,7 +139,10 @@ export class MessageService {
                 });
             }
         }
+
+        return { payload, signature };
     }
+
     public static SendTimeSyncRequest(
         targetPeer:   Peer,
         myPublicKey:  string,
@@ -291,11 +305,30 @@ export class MessageService {
 
             if (message.type === "vote") {
                 const turnIndex = message.turnIndex as number | undefined;
+                const round     = message.round     as number | undefined;
                 const move      = message.move      as string | undefined;
-                if (turnIndex !== undefined && move) {
-                    callbacks.onVote(senderPublicKey, turnIndex, move, message.timestamp ?? Date.now());
+
+                // The master forwards votes, and everyone checks them against
+                // the key written inside. A vote signed by one peer but claiming
+                // another's key would pass here yet fail for everyone after
+                // forwarding, stopping the game. Drop it now.
+                if (message.key !== senderPublicKey) {
+                    logger.warn(`Vote claims someone else's key`, { sender: senderPublicKey.slice(0, 8) });
+                    return null;
+                }
+
+                if (turnIndex !== undefined && round !== undefined && move) {
+                    callbacks.onVote(
+                        senderPublicKey, turnIndex, round, move, message.timestamp ?? Date.now(),
+                        { payload: message, signature } as unknown as SignedVote,
+                    );
                 }
                 return "vote";
+            }
+
+            if (message.type === "tally_result") {
+                callbacks.onTallyResult(senderPublicKey, message as unknown as TallyClaim);
+                return "tally_result";
             }
 
             if (message.type === "resign_vote") {

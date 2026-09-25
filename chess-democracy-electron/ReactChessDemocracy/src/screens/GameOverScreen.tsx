@@ -19,6 +19,17 @@ function resultLabel(winner: string | null, reason: string, myTeam: string | nul
     let headline = '';
     let sub      = '';
 
+    // Nobody won: the game ended without a result. Showing "You lost" here
+    // was wrong for both sides.
+    if (winner === null) {
+        headline = 'Game over';
+        sub      = reason === 'timeout'           ? 'Move timeout'
+                 : reason === 'revotes_exhausted' ? 'Voting exhausted, no consensus'
+                 : reason === 'desync'            ? 'Stopped because the players got out of sync'
+                 : 'No result';
+        return { headline, sub, isWin: null };
+    }
+
     if (isDraw) {
         headline = 'Draw';
         sub      = reason === 'stalemate'          ? 'Stalemate'

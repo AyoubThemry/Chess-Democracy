@@ -8,7 +8,8 @@ import { NETWORK_CONFIG }         from "../../utils/config.js";
 import { logger }                 from "../../utils/logger.js";
 import { randomUUID }             from "crypto";
 import type { Team }              from "../../game/game-state.js";
-import type { GameConfig }        from "../../game/voting-state.js";
+import type { GameConfig, SignedVote } from "../../game/voting-state.js";
+import type { TallyClaim }        from "../../game/verify-tally.js";
 
 export class LocalNetworkController extends BaseNetworkController {
     private publisher?:    PublisherService;
@@ -153,9 +154,18 @@ export class LocalNetworkController extends BaseNetworkController {
         );
     }
 
-    public broadcastVote(turnIndex: number, move: string, timestamp: number): void {
+    /** Returns the vote as signed, so the master can forward it in its tally. */
+    public broadcastVote(turnIndex: number, round: number, move: string, timestamp: number): SignedVote {
+        return MessageService.broadcast(
+            { type: 'vote', turnIndex, round, move, timestamp },
+            this.getAllPeers(),
+            this.identity,
+        ) as unknown as SignedVote;
+    }
+
+    public broadcastTallyResult(claim: TallyClaim): void {
         MessageService.broadcast(
-            { type: 'vote', turnIndex, move, timestamp },
+            { type: 'tally_result', ...claim },
             this.getAllPeers(),
             this.identity,
         );
