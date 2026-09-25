@@ -279,9 +279,22 @@ export class MessageService {
             }
 
             if (message.type === "time_sync_response") {
-                const offset = (message.server_time ?? 0) - (message.client_time ?? 0);
+                // The reply took time to travel, so the master's clock reading
+                // isn't "now". Assume it was taken halfway through the round
+                // trip, the same assumption NTP makes. Treating the whole trip
+                // as clock difference was harmless on a LAN (~1 ms) but puts
+                // every vote window 50-200 ms off over the internet.
+                const sentAt     = message.client_time;
+                const serverTime = message.server_time;
+                const receivedAt = Date.now();
+                if (typeof sentAt !== 'number' || typeof serverTime !== 'number' || sentAt > receivedAt) {
+                    logger.warn(`Unusable time-sync response`, { sender: senderPublicKey.slice(0, 8) });
+                    return null;
+                }
+                const roundTrip = receivedAt - sentAt;
+                const offset    = Math.round(serverTime - (sentAt + roundTrip / 2));
                 callbacks.setTimeOffset(offset);
-                logger.info(`Time-sync offset received`, { offsetMs: offset });
+                logger.info(`Time-sync offset received`, { offsetMs: offset, roundTripMs: roundTrip });
                 return "time_sync_response";
             }
 
