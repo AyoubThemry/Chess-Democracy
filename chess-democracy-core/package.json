@@ -1,6 +1,6 @@
 {
   "name": "chess-democracy-core",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Global And Local P2P Chess Democracy",
   "private": true,
   "type": "module",
