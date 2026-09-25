@@ -7,7 +7,8 @@ import { GAME_CONFIG, VOTE_CONFIG } from "../utils/config.js";
 import { logger }                  from "../utils/logger.js";
 import { GameState, checkTeamBalance, Team, GameResult } from "../game/game-state.js";
 import { VotingState, GameConfig, DEFAULT_GAME_CONFIG, TallyResult, tallyMoves } from "../game/voting-state.js";
-import { verifyTally, TallyClaim } from "../game/verify-tally.js";
+import { verifyTally, checkVote, TallyClaim } from "../game/verify-tally.js";
+import type { GameSnapshot } from "../game/snapshot.js";
 import {
     sendGameStart,
     sendMove,
@@ -64,6 +65,11 @@ export class Node extends EventEmitter {
     private _voteTimer?:      NodeJS.Timeout;
     private _moveTimeoutTimer?: NodeJS.Timeout;
     private _moveTimeoutStartedAt = 0;
+
+    // Who's in the current game, and their teams. Empty outside a game.
+    private readonly roster = new Map<string, Team>();
+    // After a player reconnects, don't count votes until states are exchanged.
+    private _resyncGraceUntil = 0;
     private _gameMode:        'direct' | 'voting' = 'voting';
 
     // Resign vote state
@@ -298,7 +304,14 @@ export class Node extends EventEmitter {
 
                 this._configVersion = version;
                 this._gameConfig    = config;
-                this._peerAcceptedVersions.clear();
+                // Drop acceptances of older proposals, but keep any for this
+                // one that arrived before the proposal itself did.
+                const earlyAccepts = [...this._peerAcceptedVersions]
+                    .filter(([key, v]) => v === version && key !== senderKey)
+                    .map(([key]) => key);
+                for (const [key, v] of this._peerAcceptedVersions) {
+                    if (v < version) this._peerAcceptedVersions.delete(key);
+                }
                 this._peerAcceptedVersions.set(senderKey, version);
 
                 if (sameConfig) {
@@ -315,11 +328,18 @@ export class Node extends EventEmitter {
                         proposerKey:  senderKey,
                     });
                 }
+                // config:updated resets the UI's list to just the proposer.
+                for (const peerId of earlyAccepts) {
+                    this.emit('config:peer_accepted', { peerId, version });
+                }
             },
 
             onConfigAccept: (senderKey, version) => {
-                if (version !== this._configVersion) return;
+                if (version < this._configVersion) return;
                 this._peerAcceptedVersions.set(senderKey, version);
+                // With 3+ players, someone's accept can overtake the proposal it
+                // accepts. Keep it; it counts once the proposal gets here.
+                if (version > this._configVersion) return;
                 logger.info(`Peer accepted config`, { peer: senderKey.slice(0, 8), version });
                 this.emit('config:peer_accepted', { peerId: senderKey, version });
             },
@@ -336,7 +356,8 @@ export class Node extends EventEmitter {
                 }
             },
 
-            onTallyResult: (senderKey, claim) => this.handleTallyResult(senderKey, claim),
+            onTallyResult:  (senderKey, claim)    => this.handleTallyResult(senderKey, claim),
+            onGameSnapshot: (senderKey, snapshot) => this.handleGameSnapshot(senderKey, snapshot),
 
             onVote: (senderKey, turnIndex, round, move, _timestamp, signed) => {
                 if (!this._voting || this._voting.turnIndex !== turnIndex || this._voting.round !== round) {
@@ -419,7 +440,7 @@ export class Node extends EventEmitter {
             getAllPeers:           () => this.allPeers,
             getAlivePeersCount:    () => this.totalAlivePeersCount,
             adjustAlivePeersCount: (sign, amount) => this.adjustAlivePeersCount(sign, amount),
-            acceptingConnection:   () => this.acceptingConnectionStatus,
+            acceptingConnection:   (peerKey) => this.acceptsConnection(peerKey),
         }, port).then(({ network, boundPort }) => {
             if (this.stopped) {   // stop() ran while the transport was starting
                 network.stop();
@@ -555,6 +576,7 @@ export class Node extends EventEmitter {
             );
         }
 
+        this.recordRoster();
         this.game.beginCountdown(gameId, startsAt);
         this.scheduleGameBegin(startsAt);
     }
@@ -586,9 +608,9 @@ export class Node extends EventEmitter {
 
     // Voting window management
 
-    private openVotingWindow(turnIndex: number, windowStartTime: number): void {
+    private openVotingWindow(turnIndex: number, windowStartTime: number, round = 0): void {
         const windowCloseAt = windowStartTime + this._gameConfig.voteWindowMs;
-        this._voting = new VotingState(turnIndex, windowCloseAt);
+        this._voting = new VotingState(turnIndex, windowCloseAt, round);
 
         const tallyTime = windowCloseAt + VOTE_CONFIG.VOTE_GRACE_MS;
         const delay     = Math.max(0, tallyTime - this.getSynchronizedTime());
@@ -645,9 +667,19 @@ export class Node extends EventEmitter {
      */
     private onTallyDue(): void {
         if (!this._voting) return;
-        if (this.masterKey() === this.identity.publicKey) {
+
+        // Hold off while a returning player's state is still being exchanged,
+        // and whenever too few players are connected to count safely.
+        const settling = Date.now() < this._resyncGraceUntil;
+        if (!settling && this.hasQuorum() && this.masterKey() === this.identity.publicKey) {
             this.countAndPublish();
             return;
+        }
+        if (!this.hasQuorum()) {
+            logger.warn(`Too few players connected to count votes, waiting`, {
+                connected: this.connectedPlayers().length,
+                players:   this.roster.size,
+            });
         }
         this._voteTimer = setTimeout(() => this.onTallyDue(), VOTE_CONFIG.TALLY_WAIT_MS);
     }
@@ -706,7 +738,136 @@ export class Node extends EventEmitter {
         this.applyTally(verdict.result);
     }
 
+    // Resync
+    //
+    // When a player reconnects mid-game, both sides send each other a
+    // snapshot. Whoever is behind replays the moves they missed and joins the
+    // open vote window, including the votes already cast in it.
+
+    private sendSnapshotTo(peer: Peer): void {
+        if (!this._voting) return;
+        this.net?.sendGameSnapshotToPeer({
+            gameId:        this.game.gameId,
+            moves:         this.game.moveHistory.map(m => m.move),
+            round:         this._voting.round,
+            windowCloseAt: this._voting.windowCloseAt,
+            votes:         this._voting.signedVotes(),
+        }, peer);
+    }
+
+    /**
+     * The moves in a snapshot are trusted as far as each one being legal in
+     * turn; they aren't re-proven with the votes that chose them. That's fine
+     * between friends, and a snapshot can only extend our history, never
+     * rewrite it: a history that differs stops the game as out of sync.
+     */
+    private handleGameSnapshot(senderKey: string, snap: GameSnapshot): void {
+        if (this.game.phase !== 'in_progress' || !this.roster.has(senderKey)) return;
+        if (snap.gameId !== this.game.gameId || !Array.isArray(snap.moves))  return;
+
+        const mine = this.game.moveHistory.map(m => m.move);
+        for (let i = 0; i < Math.min(mine.length, snap.moves.length); i++) {
+            if (mine[i] !== snap.moves[i]) {
+                this.stopOutOfSync('histories_differ', senderKey);
+                return;
+            }
+        }
+        if (snap.moves.length < mine.length) return;   // they're behind; ours catches them up
+
+        const behind      = snap.moves.length > mine.length;
+        const missedRound = !behind && !!this._voting && snap.round > this._voting.round;
+
+        if (behind) {
+            logger.info(`Catching up from a snapshot`, {
+                from:   senderKey.slice(0, 8),
+                missed: snap.moves.length - mine.length,
+            });
+            for (const move of snap.moves.slice(mine.length)) {
+                if (!this.replayMove(move, senderKey)) return;
+            }
+        }
+
+        if (behind || missedRound) {
+            clearTimeout(this._voteTimer);
+            this._voteTimer = undefined;
+            this.openVotingWindow(
+                snap.moves.length,
+                snap.windowCloseAt - this._gameConfig.voteWindowMs,
+                snap.round,
+            );
+        }
+
+        // Pick up votes cast in this window that never reached us. Each one
+        // gets the same check the master's votes do.
+        const voting = this._voting;
+        if (!voting || voting.turnIndex !== snap.moves.length || voting.round !== snap.round) return;
+        const ctx = {
+            turnIndex:  voting.turnIndex,
+            round:      voting.round,
+            sideToMove: this.game.currentTurn,
+            legalMoves: this.game.legalMoves,
+            teamOf:     (key: string) => this.teamOf(key),
+        };
+        for (const vote of Array.isArray(snap.votes) ? snap.votes : []) {
+            if (checkVote(vote, ctx)) continue;
+            if (voting.addVerifiedVote(vote) === 'ok') {
+                this.emit('vote:received', {
+                    peerId:    vote.payload.key,
+                    turnIndex: voting.turnIndex,
+                    move:      vote.payload.move,
+                });
+            }
+        }
+    }
+
+    /** Plays one move from a snapshot as a tally would. False once the game has stopped. */
+    private replayMove(move: string, senderKey: string): boolean {
+        const turnIndex = this.game.moveHistory.length;
+        const team      = this.game.currentTurn;
+        const applied   = this.game.applyMove({
+            moveIndex: turnIndex,
+            move,
+            senderKey: '',
+            fenBefore: this.game.fen,
+            timestamp: this.getSynchronizedTime(),
+        }, team);
+
+        if (applied !== 'ok') {
+            this.stopOutOfSync('snapshot_move_illegal', senderKey);
+            return false;
+        }
+
+        this.emit('tally:done', {
+            turnIndex,
+            move,
+            isTiebreak:    false,
+            voteCount:     0,
+            total:         0,
+            appliedByTeam: team,
+            fen:           this.game.fen,
+            legalMoves:    this.game.legalMoves,
+            isMyTurn:      this.game.isMyTurn,
+        });
+
+        if (this.game.phase === 'finished' && this.game.result) {
+            clearTimeout(this._voteTimer);
+            clearTimeout(this._moveTimeoutTimer);
+            this._voteTimer        = undefined;
+            this._moveTimeoutTimer = undefined;
+            this._voting           = null;
+            this.emit('game:over', {
+                gameId:    this.game.gameId,
+                result:    this.game.result,
+                lastFen:   this.game.fen,
+                moveCount: this.game.moveHistory.length,
+            });
+            return false;
+        }
+        return true;
+    }
+
     private teamOf(publicKey: string): Team | null {
+        if (this.roster.has(publicKey))        return this.roster.get(publicKey)!;
         if (publicKey === this.identity.publicKey) return this.game.myTeam;
         return (this.allPeers.get(publicKey)?.team ?? null) as Team | null;
     }
@@ -716,8 +877,8 @@ export class Node extends EventEmitter {
      * its. Carrying on would mean playing a different game from everyone else,
      * so end it and say why instead of freezing.
      */
-    private stopOutOfSync(reason: string, masterKey: string): void {
-        logger.error(`Master's tally rejected, stopping the game`, { master: masterKey.slice(0, 8), reason });
+    private stopOutOfSync(reason: string, peerKey: string): void {
+        logger.error(`Out of sync with a peer, stopping the game`, { peer: peerKey.slice(0, 8), reason });
 
         this.game.finish({ winner: null, reason: 'desync' });
         if (this._resignVote) {
@@ -883,13 +1044,50 @@ export class Node extends EventEmitter {
         clearInterval(this.readyCheckInterval);
         this.readyCheckInterval = undefined;
         if (this.gameStartTimeout) clearTimeout(this.gameStartTimeout);
+        this.recordRoster();
         this.game.beginCountdown(theirGameId, theirStart);
         this.scheduleGameBegin(theirStart);
     }
 
     /** Lowest public key among us and our peers. It picks the gameId and start time. */
     private masterKey(): string {
-        return [this.identity.publicKey, ...this.allPeers.keys()].sort()[0];
+        return this.connectedPlayers().sort()[0];
+    }
+
+    // Roster
+    //
+    // Who is in this game, fixed when the countdown starts. Before, "the game"
+    // meant "whoever is connected right now", so a new app appearing on the
+    // LAN mid-game joined the peer list and could even become master.
+
+    /** Everyone in the game (us included) who is currently connected. Outside a game, everyone connected. */
+    private connectedPlayers(): string[] {
+        const connected = [this.identity.publicKey, ...this.allPeers.keys()];
+        return this.roster.size ? connected.filter(k => this.roster.has(k)) : connected;
+    }
+
+    /**
+     * Votes are only counted while more than half the players are connected.
+     * Without this a player who drops out is alone, counts as master, and
+     * keeps playing a game of their own that can't be merged back.
+     */
+    private hasQuorum(): boolean {
+        return this.roster.size === 0 || this.connectedPlayers().length * 2 > this.roster.size;
+    }
+
+    private recordRoster(): void {
+        this.roster.clear();
+        this.roster.set(this.identity.publicKey, this.game.myTeam!);
+        for (const [key, peer] of this.allPeers) {
+            if (peer.team === 'white' || peer.team === 'black') this.roster.set(key, peer.team);
+        }
+    }
+
+    /** No key: could anyone connect now? With a key: may this peer connect? */
+    private acceptsConnection(peerKey?: string): boolean {
+        if (this.state.acceptingConnection) return true;          // lobby open
+        return peerKey === undefined ? this.roster.size > 0      // a player might be coming back
+                                     : this.roster.has(peerKey);
     }
 
     private handleMove(msg: Record<string, unknown>, senderKey: string): void {
@@ -1208,6 +1406,8 @@ export class Node extends EventEmitter {
         }
 
         this.game.reset();
+        this.roster.clear();
+        this._resyncGraceUntil = 0;
         this._voting    = null;
         this._gameMode  = 'voting';
 
@@ -1243,10 +1443,40 @@ export class Node extends EventEmitter {
     }
 
     private addPeer(peer: Peer): void {
-        if (this.state.peers.has(peer.peerPublicNodeId)) return;
-        this.state.peers.set(peer.peerPublicNodeId, peer);
-        this.state.alivePeersCount++;
+        const key      = peer.peerPublicNodeId;
+        const existing = this.state.peers.get(key);
+        if (existing === peer) return;
+
+        // Mid-game, only players from this game may join. Discovery still
+        // dials any app it finds on the network; those connections end here.
+        const inGame = this.roster.size > 0;
+        if (inGame && !this.roster.has(key)) {
+            logger.info(`Connection from outside this game closed`, { peer: key.slice(0, 8) });
+            peer.connection.close();
+            return;
+        }
+
+        // Two connections to the same peer are normal (discovery and a direct
+        // connect can both happen). Keep the one we have while it works; only
+        // a reconnect after the old one died replaces it. Replacing live
+        // connections makes both sides close the one the other is using.
+        if (existing && existing.status === PeerStatus.Alive && existing.connection.isOpen) return;
+
+        if (existing) {
+            logger.info(`Peer reconnected, replacing its old connection`, { peer: key.slice(0, 8) });
+            existing.connection.close();
+            this.state.peers.set(key, peer);
+        } else {
+            this.state.peers.set(key, peer);
+            this.state.alivePeersCount++;
+        }
         this.state.lastConnectionMs = Date.now();
+
+        if (inGame) {
+            // A new connection starts blank. The roster remembers who they are.
+            peer.team  = this.roster.get(key)!;
+            peer.ready = true;
+        }
 
         logger.info(`Peer added`, {
             peer:   peer.peerPublicNodeId.slice(0, 8),
@@ -1258,12 +1488,20 @@ export class Node extends EventEmitter {
             total:  this.state.alivePeersCount,
         });
 
-        // Inform new peer of our side choice
+        if (inGame) {
+            // Tell them where the game stands, and hold off counting until
+            // they've told us the same. Whoever is behind catches up.
+            if (this.game.phase === 'in_progress') {
+                this._resyncGraceUntil = Date.now() + GAME_CONFIG.RESYNC_GRACE_MS;
+                this.sendSnapshotTo(peer);
+            }
+            return;
+        }
+
+        // Lobby: tell the new peer our side and the current config.
         if (this.game.myTeam && this.net) {
             this.net.sendSideChoiceToPeer(this.game.myTeam, peer);
         }
-
-        // Inform new peer of current config so they can accept it
         if (this.net) {
             this.net.sendConfigProposalToPeer(this._gameConfig, this._configVersion, peer);
         }
@@ -1271,7 +1509,9 @@ export class Node extends EventEmitter {
 
     private handlePeerDisconnect(peer: Peer): void {
         const peerId = peer.peerPublicNodeId;
-        if (!this.state.peers.has(peerId)) return;
+        // Only if it's still the connection we're using. When a player
+        // reconnects, the old connection closes after it was replaced.
+        if (this.state.peers.get(peerId) !== peer) return;
 
         this.state.peers.delete(peerId);
         this.state.alivePeersCount = Math.max(0, this.state.alivePeersCount - 1);

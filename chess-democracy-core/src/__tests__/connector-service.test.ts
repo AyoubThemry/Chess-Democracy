@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { ConnectorService } from '../network/localnetwork/connector-service.js';
+import { ConnectorService, hostForUrl } from '../network/localnetwork/connector-service.js';
 import { getOrCreateIdentity } from '../protocol/generateidentity.js';
 import { signMessage } from '../protocol/verifysignsignature.js';
 import { PeerData, Peer } from '../network/peer.js';
@@ -146,5 +146,18 @@ describe('ConnectorService.connect', () => {
         const pd: PeerData = { peerPublicNodeId: peerId.publicKey, ip: '127.0.0.1', port };
         await expect(service.connect(pd, myId.publicKey, myId.privateKey, 9000))
             .rejects.toThrow();
+    });
+});
+
+describe('hostForUrl', () => {
+    it('turns the IPv4-mapped address an inbound socket reports into plain IPv4', () => {
+        expect(hostForUrl('::ffff:127.0.0.1')).toBe('127.0.0.1');
+        expect(hostForUrl('::FFFF:192.168.1.5')).toBe('192.168.1.5');
+    });
+
+    it('brackets real IPv6 and leaves IPv4 and hostnames alone', () => {
+        expect(hostForUrl('fe80::1')).toBe('[fe80::1]');
+        expect(hostForUrl('192.168.1.5')).toBe('192.168.1.5');
+        expect(hostForUrl('localhost')).toBe('localhost');
     });
 });

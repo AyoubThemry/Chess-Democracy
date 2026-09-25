@@ -46,18 +46,12 @@ export function verifyTally(claim: TallyClaim, ctx: TallyContext): TallyVerdict 
     const moves: string[] = [];
 
     for (const vote of claim.votes) {
-        const p = vote?.payload;
-        if (!p || p.type !== 'vote' || typeof p.key !== 'string' || typeof vote.signature !== 'string') {
-            return fail('malformed_vote');
-        }
-        if (!verifySignature(JSON.stringify(p), vote.signature, p.key)) return fail('bad_vote_signature');
-        if (p.turnIndex !== ctx.turnIndex || p.round !== ctx.round)     return fail('vote_from_another_round');
-        if (ctx.teamOf(p.key) !== ctx.sideToMove)                        return fail('voter_not_on_side_to_move');
-        if (!ctx.legalMoves.includes(p.move))                            return fail('illegal_move');
-        if (voters.has(p.key))                                           return fail('duplicate_voter');
+        const problem = checkVote(vote, ctx);
+        if (problem)                   return fail(problem);
+        if (voters.has(vote.payload.key)) return fail('duplicate_voter');
 
-        voters.add(p.key);
-        moves.push(p.move);
+        voters.add(vote.payload.key);
+        moves.push(vote.payload.move);
     }
 
     const recount = tallyMoves(moves);
@@ -65,6 +59,26 @@ export function verifyTally(claim: TallyClaim, ctx: TallyContext): TallyVerdict 
     if (recount.outcome === 'winner' && recount.move !== claim.move)     return fail('move_differs');
 
     return { ok: true, result: recount };
+}
+
+/**
+ * Checks one forwarded vote: signed by the voter it names, for this turn and
+ * round, from the side to move, for a legal move. Returns what's wrong with
+ * it, or null if nothing is.
+ */
+export function checkVote(
+    vote: SignedVote,
+    ctx:  Pick<TallyContext, 'turnIndex' | 'round' | 'sideToMove' | 'legalMoves' | 'teamOf'>,
+): string | null {
+    const p = vote?.payload;
+    if (!p || p.type !== 'vote' || typeof p.key !== 'string' || typeof vote.signature !== 'string') {
+        return 'malformed_vote';
+    }
+    if (!verifySignature(JSON.stringify(p), vote.signature, p.key)) return 'bad_vote_signature';
+    if (p.turnIndex !== ctx.turnIndex || p.round !== ctx.round)     return 'vote_from_another_round';
+    if (ctx.teamOf(p.key) !== ctx.sideToMove)                        return 'voter_not_on_side_to_move';
+    if (!ctx.legalMoves.includes(p.move))                            return 'illegal_move';
+    return null;
 }
 
 function fail(reason: string): TallyVerdict {

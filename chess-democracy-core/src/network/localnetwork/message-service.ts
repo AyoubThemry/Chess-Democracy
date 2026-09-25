@@ -6,6 +6,7 @@ import { logger }                  from "../../utils/logger.js";
 import type { Team, GameResult }   from "../../game/game-state.js";
 import type { GameConfig, SignedVote } from "../../game/voting-state.js";
 import type { TallyClaim }         from "../../game/verify-tally.js";
+import type { GameSnapshot }       from "../../game/snapshot.js";
 // Node is intentionally NOT imported here.
 // The time-offset callback is injected at call time to avoid a circular
 // dependency: Node → LocalNetworkController → MessageService → Node.
@@ -13,22 +14,36 @@ import type { TallyClaim }         from "../../game/verify-tally.js";
 // ---------------------------------------------------------------------------
 // Nonce replay protection
 // ---------------------------------------------------------------------------
-// Key: `${senderPublicKey}:${nonce}` — scoped per sender so different peers
-// can legitimately reuse the same UUID without colliding.
-const seenNonces = new Map<string, NodeJS.Timeout>();
+/**
+ * Nonces already seen, per sender, forgotten after NONCE_TTL_MS.
+ *
+ * Each node needs its own. This used to be one module-level map shared by
+ * every node in the process, so when several nodes ran in one process (tests,
+ * or a headless host) the first to receive a broadcast recorded its nonce and
+ * every other node then rejected the same packet as a replay.
+ */
+export class NonceStore {
+    private readonly seen = new Map<string, NodeJS.Timeout>();
 
-function isReplay(senderPublicKey: string, nonce: string | undefined): boolean {
-    if (!nonce) return false;
-    return seenNonces.has(`${senderPublicKey}:${nonce}`);
+    /** Records the nonce. False if it was already seen. Messages without one pass. */
+    admit(senderPublicKey: string, nonce: string | undefined): boolean {
+        if (!nonce) return true;
+        const key = `${senderPublicKey}:${nonce}`;   // per sender: different peers may reuse a UUID
+        if (this.seen.has(key)) return false;
+        const handle = setTimeout(() => this.seen.delete(key), NETWORK_CONFIG.NONCE_TTL_MS);
+        handle.unref();
+        this.seen.set(key, handle);
+        return true;
+    }
+
+    clear(): void {
+        for (const handle of this.seen.values()) clearTimeout(handle);
+        this.seen.clear();
+    }
 }
 
-function recordNonce(senderPublicKey: string, nonce: string | undefined): void {
-    if (!nonce) return;
-    const key    = `${senderPublicKey}:${nonce}`;
-    const handle = setTimeout(() => seenNonces.delete(key), NETWORK_CONFIG.NONCE_TTL_MS);
-    handle.unref();
-    seenNonces.set(key, handle);
-}
+// Only for callers that don't pass their own store (unit tests).
+const fallbackNonces = new NonceStore();
 
 // ---------------------------------------------------------------------------
 // Typed inbound message (replaces message: any)
@@ -71,6 +86,7 @@ export interface MessageCallbacks {
     onConfigAccept:   (senderKey: string, version: number) => void;
     onVote:           (senderKey: string, turnIndex: number, round: number, move: string, timestamp: number, signed: SignedVote) => void;
     onTallyResult:    (senderKey: string, claim: TallyClaim) => void;
+    onGameSnapshot:   (senderKey: string, snapshot: GameSnapshot) => void;
     onDrawOffer:      (senderKey: string) => void;
     onDrawResponse:   (senderKey: string, accepted: boolean) => void;
     onResignVote:     (senderKey: string) => void;
@@ -84,6 +100,7 @@ type OutboundMessage =
   | { type: 'config_accept';   version: number }
   | { type: 'vote';            turnIndex: number; round: number; move: string; timestamp: number }
   | ({ type: 'tally_result' } & TallyClaim)
+  | ({ type: 'game_snapshot' } & GameSnapshot)
   | { type: 'draw_offer' }
   | { type: 'draw_response';   accepted: boolean }
   | { type: 'resign_vote' }
@@ -206,10 +223,10 @@ export class MessageService {
         myPublicKey:    string,
         myPrivateKey:   string,
         callbacks:      MessageCallbacks,
+        nonces:         NonceStore = fallbackNonces,
     ): string | null {
         try {
             // 1. Verify signature
-            
             if (!verifySignature(JSON.stringify(message), signature, senderPublicKey)) {
                 logger.warn(`Invalid message signature`, { sender: senderPublicKey.slice(0, 8) });
                 return null;
@@ -217,14 +234,13 @@ export class MessageService {
 
             // 2. Replay check — only after signature is verified so the nonce
             //    store cannot be poisoned with unsigned garbage.
-            if (isReplay(senderPublicKey, message.nonce)) {
+            if (!nonces.admit(senderPublicKey, message.nonce)) {
                 logger.warn(`Replay attempt detected`, {
                     sender: senderPublicKey.slice(0, 8),
                     type:   message.type,
                 });
                 return null;
             }
-            recordNonce(senderPublicKey, message.nonce);
 
             // 3. Locate sender
             const peer = peers.get(senderPublicKey);
@@ -336,6 +352,11 @@ export class MessageService {
                     );
                 }
                 return "vote";
+            }
+
+            if (message.type === "game_snapshot") {
+                callbacks.onGameSnapshot(senderPublicKey, message as unknown as GameSnapshot);
+                return "game_snapshot";
             }
 
             if (message.type === "tally_result") {

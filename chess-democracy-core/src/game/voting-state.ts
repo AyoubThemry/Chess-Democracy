@@ -76,9 +76,11 @@ export class VotingState {
     private _revoteCount:   number = 0;
     readonly turnIndex:     number;
 
-    constructor(turnIndex: number, windowCloseAt: number) {
+    /** `round` is non-zero only when catching up to a window already in a revote. */
+    constructor(turnIndex: number, windowCloseAt: number, round = 0) {
         this.turnIndex      = turnIndex;
         this._windowCloseAt = windowCloseAt;
+        this._revoteCount   = round;
     }
 
     get votes():         ReadonlyMap<string, string> { return this._votes; }
@@ -93,6 +95,19 @@ export class VotingState {
         if (this._votes.has(publicKey)) return 'duplicate';
         this._votes.set(publicKey, move);
         if (signed) this._signed.set(publicKey, signed);
+        return 'ok';
+    }
+
+    /**
+     * A vote handed over in a snapshot. It was cast in time on the peer that
+     * sent it, so the window clock isn't checked; the caller has already
+     * checked the signature and the voter.
+     */
+    addVerifiedVote(signed: SignedVote): 'ok' | 'duplicate' {
+        const key = signed.payload.key;
+        if (this._votes.has(key)) return 'duplicate';
+        this._votes.set(key, signed.payload.move);
+        this._signed.set(key, signed);
         return 'ok';
     }
 

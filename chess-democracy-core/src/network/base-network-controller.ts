@@ -2,7 +2,7 @@ import { EventEmitter }        from 'events';
 import { INetworkController }  from "./i-network-controller-interface.js";
 import { WebsocketService }    from "./websocket-service.js";
 import { ConnectorService }    from "./localnetwork/connector-service.js";
-import { MessageService, MessageCallbacks } from "./localnetwork/message-service.js";
+import { MessageService, MessageCallbacks, NonceStore } from "./localnetwork/message-service.js";
 import { PeerData, Peer, PeerStatus } from "./peer.js";
 import { WebSocketConnection } from "./peer-connection.js";
 import { verifySignature }     from "../protocol/verifysignsignature.js";
@@ -13,6 +13,7 @@ import { logger }              from '../utils/logger.js';
 
 export abstract class BaseNetworkController extends EventEmitter implements INetworkController {
     protected connector = new ConnectorService();
+    private readonly nonces = new NonceStore();   // replay protection, this node's own
 
     // ── Rate limiting (per remote IP) ─────────────────────────────────────
     private readonly rateLimitMap              = new Map<string, number[]>();
@@ -25,7 +26,7 @@ export abstract class BaseNetworkController extends EventEmitter implements INet
         protected readonly port:                      number,
         protected readonly getTotalAlivePeersCount:   () => number,
         protected readonly getAllPeers:               () => Map<string, Peer>,
-        protected readonly acceptingConnectionStatus: () => boolean,
+        protected readonly acceptingConnectionStatus: (peerKey?: string) => boolean,
     ) {
         super();
 
@@ -46,6 +47,7 @@ export abstract class BaseNetworkController extends EventEmitter implements INet
     protected stopBase(): void {
         clearInterval(this.rateLimitCleanupInterval);
         this.rateLimitMap.clear();
+        this.nonces.clear();
     }
 
     // ── Rate limiting ─────────────────────────────────────────────────────
@@ -135,6 +137,17 @@ export abstract class BaseNetworkController extends EventEmitter implements INet
                 return;
             }
 
+            // Now we know who it is. The lobby may be closed, but a player
+            // from the running game is allowed back in.
+            if (!this.acceptingConnectionStatus(info.payload.key)) {
+                logger.info(`Handshake refused, not accepting this peer`, { peer: String(info.payload.key).slice(0, 8) });
+                socket.close();
+                return;
+            }
+
+            // Before the ACK goes out: the peer may send the moment it gets it.
+            const connection = new WebSocketConnection(socket);
+
             const isAckSent = await this.connector.sendConnectionAck(
                 socket,
                 this.identity.privateKey,
@@ -144,9 +157,11 @@ export abstract class BaseNetworkController extends EventEmitter implements INet
             );
 
             if (isAckSent) {
-                const peer = new Peer({ peerPublicNodeId: info.payload.key, ip, port: p }, new WebSocketConnection(socket));
-                this.setupMessageHandling(peer, socket);
+                const peer = new Peer({ peerPublicNodeId: info.payload.key, ip, port: p }, connection);
+                // Register the peer before delivering its messages, or the
+                // ones held since the handshake arrive from an "unknown" peer.
                 this.emit('peer:connected', peer);
+                this.setupMessageHandling(peer, connection);
                 logger.info(`Inbound peer connected`, { peer: info.payload.key.slice(0, 8), ip });
             }
         } catch (err: unknown) {
@@ -155,7 +170,8 @@ export abstract class BaseNetworkController extends EventEmitter implements INet
         }
     }
 
-    private setupMessageHandling(peer: Peer, socket: WebSocket): void {
+    private setupMessageHandling(peer: Peer, connection: WebSocketConnection): void {
+        const socket = connection.socket;
         socket.on("close", (code: number, reason: Buffer) => {
             logger.info(`Peer socket closed`, {
                 peer:   peer.peerPublicNodeId.slice(0, 8),
@@ -176,7 +192,7 @@ export abstract class BaseNetworkController extends EventEmitter implements INet
             });
         });
 
-        socket.on("message", (data: Buffer) => {
+        connection.onMessage((data: Buffer) => {
             try {
                 const { payload, signature } = JSON.parse(data.toString("utf8"));
                 MessageService.HandleMessage(
@@ -187,6 +203,7 @@ export abstract class BaseNetworkController extends EventEmitter implements INet
                     this.identity.publicKey,
                     this.identity.privateKey,
                     this.getMessageCallbacks(),
+                    this.nonces,
                 );
             } catch (err: unknown) {
                 logger.error(`Error handling peer message`, {
@@ -212,8 +229,8 @@ export abstract class BaseNetworkController extends EventEmitter implements INet
             );
             // The connector always builds a WebSocketConnection; this class is the
             // WebSocket transport, so it's the one place allowed to reach under it.
-            this.setupMessageHandling(peer, (peer.connection as WebSocketConnection).socket);
-            this.emit('peer:connected', peer);
+            this.emit('peer:connected', peer);   // before any of its messages, as above
+            this.setupMessageHandling(peer, peer.connection as WebSocketConnection);
             logger.info(`Outbound peer connected`, { peer: peerData.peerPublicNodeId.slice(0, 8) });
         } catch (err: unknown) {
             logger.error(`Outbound connection failed`, {
@@ -225,16 +242,25 @@ export abstract class BaseNetworkController extends EventEmitter implements INet
 
     // ── Ghost detection ───────────────────────────────────────────────────
 
+    /**
+     * Peers that have gone silent past the timeout are treated as disconnected.
+     *
+     * This used to delete them from Node's map directly, without emitting
+     * anything, so Node never updated the UI or the resign-vote denominator
+     * and nothing could try to reconnect. Now it reports them the same way a
+     * closed socket does and lets Node do the bookkeeping.
+     */
     protected removeGhosts(
-        peers:      Map<string, Peer>,
-        onPeerDied: (count: number) => void,
-        timeout:    number = NETWORK_CONFIG.GHOST_TIMEOUT_MS,
+        peers:   Map<string, Peer>,
+        timeout: number = NETWORK_CONFIG.GHOST_TIMEOUT_MS,
     ): void {
         const now = Date.now();
         for (const [id, peer] of peers) {
             if (peer.status === PeerStatus.Alive && (now - peer.lastSeen > timeout)) {
-                onPeerDied(1);
                 logger.warn(`Ghost peer removed`, { peer: id.slice(0, 8) });
+                // Mark first: the close handler skips peers already Dead, so
+                // this is the only peer:disconnected for it.
+                peer.status = PeerStatus.Dead;
                 try {
                     peer.connection.close();
                 } catch (err: unknown) {
@@ -243,8 +269,7 @@ export abstract class BaseNetworkController extends EventEmitter implements INet
                         message: toError(err).message,
                     });
                 }
-                peer.status = PeerStatus.Dead;
-                peers.delete(id);
+                this.emit('peer:disconnected', peer);
             }
         }
     }

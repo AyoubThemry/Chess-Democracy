@@ -1,56 +1,16 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { Node } from '../core/node.js';
-import { Peer } from '../network/peer.js';
-import { WebSocketConnection } from '../network/peer-connection.js';
 import { VotingState, type SignedVote } from '../game/voting-state.js';
 import type { MessageCallbacks } from '../network/localnetwork/message-service.js';
-import type { WebSocket } from 'ws';
-import { EventEmitter } from 'events';
-import type { GameNetwork } from '../network/game-network.js';
+import { bootNode, addPeer } from './helpers/fake-network.js';
 import { randomUUID } from 'crypto';
 import { getOrCreateIdentity } from '../protocol/generateidentity.js';
 import { signMessage } from '../protocol/verifysignsignature.js';
 import { verifyTally, type TallyClaim } from '../game/verify-tally.js';
 
-// Node builds its MessageCallbacks in boot() and hands them to its network
-// factory. A fake factory captures them, so tests deliver messages exactly as
-// a transport would, with no sockets and no module mocks.
-function fakeNetwork(): GameNetwork {
-    return Object.assign(new EventEmitter(), {
-        start: vi.fn(), stop: vi.fn(), sync: vi.fn(() => true),
-        broadcastReady: vi.fn(), broadcastUnready: vi.fn(),
-        broadcastSideChoice: vi.fn(), sendSideChoiceToPeer: vi.fn(),
-        broadcastConfigProposal: vi.fn(), sendConfigProposalToPeer: vi.fn(),
-        broadcastConfigAccept: vi.fn(), broadcastVote: vi.fn(),
-        broadcastTallyResult: vi.fn(), broadcastResignVoteToTeam: vi.fn(),
-        broadcastDrawOffer: vi.fn(), broadcastDrawResponse: vi.fn(),
-    }) as unknown as GameNetwork;
-}
-
-async function bootNode(): Promise<{ node: Node; cb: MessageCallbacks }> {
-    let cb!: MessageCallbacks;
-    const node = new Node(undefined, async (ctx) => {
-        cb = ctx.callbacks;
-        return { network: fakeNetwork(), boundPort: 9000 };
-    });
-    node.boot(0);
-    await new Promise(r => setImmediate(r));   // let boot() attach the network
-    return { node, cb };
-}
-
 // These tests are about who may vote, not about forwarding, so the signed
 // copy of the vote is a placeholder here. verify-tally.test.ts uses real ones.
 const SIGNED = {} as SignedVote;
-
-function fakeSocket(): WebSocket {
-    return { readyState: 1, send: vi.fn(), close: vi.fn(), on: vi.fn() } as unknown as WebSocket;
-}
-
-function addPeer(node: Node, key: string, team: 'white' | 'black'): void {
-    const peer = new Peer({ peerPublicNodeId: key, ip: '127.0.0.1', port: 9000 }, new WebSocketConnection(fakeSocket()));
-    peer.team = team;
-    node.allPeers.set(key, peer);
-}
 
 describe('Node rejects messages from peers who may not send them', () => {
     let node: Node;
