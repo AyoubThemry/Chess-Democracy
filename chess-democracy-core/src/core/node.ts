@@ -514,8 +514,7 @@ export class Node extends EventEmitter {
 
     private initiateGameStart(): void {
         const myTeam  = this.game.myTeam!;
-        const allKeys = [this.identity.publicKey, ...[...this.allPeers.keys()]].sort();
-        const isMaster = allKeys[0] === this.identity.publicKey;
+        const isMaster = this.masterKey() === this.identity.publicKey;
         const gameId   = isMaster ? randomUUID() : '';
         const startsAt = this.getSynchronizedTime() + GAME_CONFIG.GAME_START_COUNTDOWN_MS;
 
@@ -740,17 +739,35 @@ export class Node extends EventEmitter {
             return;
         }
 
-        if (senderKey < this.identity.publicKey && this.game.phase === 'starting') {
-            logger.info(`Adopting game_start from master`, {
-                master:   senderKey.slice(0, 8),
-                gameId:   theirGameId.slice(0, 8),
-                startsAt: new Date(theirStart).toISOString(),
-            });
-
-            if (this.gameStartTimeout) clearTimeout(this.gameStartTimeout);
-            this.game.beginCountdown(theirGameId, theirStart);
-            this.scheduleGameBegin(theirStart);
+        // Only the master's game_start counts. Accepting any lower key let a
+        // middle-ranked node in a 3+ player game adopt the wrong one.
+        if (senderKey !== this.masterKey()) {
+            logger.warn(`game_start from a peer that isn't the master ignored`, { sender: senderKey.slice(0, 8) });
+            return;
         }
+
+        // The master only sends this after seeing everyone ready, us included,
+        // so it's valid even if our own 2s ready check hasn't fired yet.
+        // Dropping it in that case left us on gameId '' with our own start
+        // time, up to 2s off from everyone else.
+        if (this.game.phase !== 'waiting_for_peers' && this.game.phase !== 'starting') return;
+
+        logger.info(`Adopting game_start from master`, {
+            master:   senderKey.slice(0, 8),
+            gameId:   theirGameId.slice(0, 8),
+            startsAt: new Date(theirStart).toISOString(),
+        });
+
+        clearInterval(this.readyCheckInterval);
+        this.readyCheckInterval = undefined;
+        if (this.gameStartTimeout) clearTimeout(this.gameStartTimeout);
+        this.game.beginCountdown(theirGameId, theirStart);
+        this.scheduleGameBegin(theirStart);
+    }
+
+    /** Lowest public key among us and our peers. It picks the gameId and start time. */
+    private masterKey(): string {
+        return [this.identity.publicKey, ...this.allPeers.keys()].sort()[0];
     }
 
     private handleMove(msg: Record<string, unknown>, senderKey: string): void {

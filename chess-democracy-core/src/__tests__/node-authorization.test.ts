@@ -153,3 +153,47 @@ describe('Node rejects messages from peers who may not send them', () => {
         expect(phase()).toBe('finished');
     });
 });
+
+describe('Node accepts game_start only from the master (#25)', () => {
+    let node: Node;
+    let cb: MessageCallbacks;
+
+    // Sort order decides the master: the all-zero key is lowest, so it's the
+    // master. The second key is lower than ours but isn't the lowest.
+    const MASTER = '0'.repeat(64);
+    const MIDDLE = '0'.repeat(63) + '1';
+
+    const start = { type: 'game_start', gameId: 'the-real-game', startsAt: Date.now() + 60_000 };
+
+    beforeEach(() => {
+        node = new Node();
+        node.boot(0);
+        h.onReady!(9000);
+        cb = h.callbacks as MessageCallbacks;
+
+        node.setTeam('white');
+        addPeer(node, MASTER, 'black');
+        addPeer(node, MIDDLE, 'white');
+    });
+
+    afterEach(() => node.stop());
+
+    it('ignores game_start from a lower key that is not the lowest', () => {
+        node.gameState.beginCountdown('', Date.now() + 60_000);
+        cb.onGameStart({ ...start, gameId: 'wrong-game' }, MIDDLE);
+        expect(node.gameState.gameId).toBe('');
+    });
+
+    it('adopts the master game_start while counting down', () => {
+        node.gameState.beginCountdown('', Date.now() + 60_000);
+        cb.onGameStart(start, MASTER);
+        expect(node.gameState.gameId).toBe('the-real-game');
+    });
+
+    it('adopts it even if our own ready check has not fired yet', () => {
+        node.gameState.setWaitingForPeers();
+        cb.onGameStart(start, MASTER);
+        expect(node.gameState.phase).toBe('starting');
+        expect(node.gameState.gameId).toBe('the-real-game');
+    });
+});
