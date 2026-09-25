@@ -302,8 +302,10 @@ export interface PushMap {
     };
     [PUSH.GAME_RESET]: Record<string, never>;
     [PUSH.DRAW_OFFERED]: {
-        from:     string;
-        fromSelf: boolean;
+        from:       string;
+        fromSelf:   boolean;
+        /** Only the other side may accept, so teammates of the offerer get no buttons. */
+        byOpponent: boolean;
     };
     [PUSH.DRAW_DECLINED]: {
         by: string;
