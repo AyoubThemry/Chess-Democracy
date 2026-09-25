@@ -106,4 +106,50 @@ describe('Node rejects messages from peers who may not send them', () => {
 
         expect(started).toHaveBeenCalledOnce();
     });
+
+    // ── game_over (#23) ──────────────────────────────────────────────────
+
+    const gameOver = (sender: string, gameId: string, winner: unknown, reason: string) =>
+        cb.onGameOver({ type: 'game_over', gameId, result: { winner, reason } as never }, sender);
+
+    const phase = () => node.gameState.phase;
+
+    it('ignores a game_over for a different game', () => {
+        gameOver('black-opponent', 'some-other-game', 'white', 'resignation');
+        expect(phase()).toBe('in_progress');
+    });
+
+    it('ignores a claimed checkmate, since every node detects those itself', () => {
+        gameOver('black-opponent', 'game-1', 'black', 'checkmate');
+        expect(phase()).toBe('in_progress');
+    });
+
+    it('ignores a resignation sent on behalf of the other side', () => {
+        // black claims white resigned, i.e. black wins
+        gameOver('black-opponent', 'game-1', 'black', 'resignation');
+        expect(phase()).toBe('in_progress');
+    });
+
+    it('accepts a side resigning for itself', () => {
+        gameOver('black-opponent', 'game-1', 'white', 'resignation');
+        expect(phase()).toBe('finished');
+        expect(node.gameState.result).toEqual({ winner: 'white', reason: 'resignation' });
+    });
+
+    it('ignores a timeout claimed long before the turn could have timed out', () => {
+        (node as unknown as { _moveTimeoutStartedAt: number })._moveTimeoutStartedAt = Date.now();
+        gameOver('black-opponent', 'game-1', null, 'timeout');
+        expect(phase()).toBe('in_progress');
+    });
+
+    it('accepts a timeout once the turn has really run out', () => {
+        (node as unknown as { _moveTimeoutStartedAt: number })._moveTimeoutStartedAt = Date.now() - 121_000;
+        gameOver('black-opponent', 'game-1', null, 'timeout');
+        expect(phase()).toBe('finished');
+    });
+
+    it('accepts an agreed draw', () => {
+        gameOver('black-opponent', 'game-1', 'draw', 'draw_agreement');
+        expect(phase()).toBe('finished');
+    });
 });
