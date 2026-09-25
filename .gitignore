@@ -25,6 +25,7 @@ Thumbs.db
 chess-democracy-electron/dist/
 chess-democracy-electron/dist-electron/
 chess-democracy-electron/release/
+chess-democracy-electron/staging/
 chess-democracy-electron/ReactChessDemocracy/dist/
 
 # ── Vite / TypeScript cache ───────────────────────────────────────────────────

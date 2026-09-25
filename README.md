@@ -155,6 +155,7 @@ npm run build:release
 
 ```
 npm run build:core   →  tsc on chess-democracy-core  (outputs chess-democracy-core/dist/)
+npm run stage:core   →  copies core into staging/ with runtime dependencies only
 npm run build:react  →  Vite build of ReactChessDemocracy  (outputs ReactChessDemocracy/dist/)
 npm run build        →  tsc on the Electron main process  (outputs chess-democracy-electron/dist-ts/)
 npm run dist         →  electron-builder  (packages final .exe / .dmg / .AppImage)
@@ -166,8 +167,8 @@ Artifacts land in `chess-democracy-electron/release/`:
 
 | File | What it is |
 |---|---|
-| `ChessDemocracy-0.1.0-portable.exe` | Single file, no install. Double-click to run. |
-| `Chess Democracy Setup 0.1.0.exe` | NSIS installer, lets you pick the install directory. |
+| `Chess Democracy Setup 0.1.1.exe` | Installer. Recommended: installs once, then starts in under a second. |
+| `ChessDemocracy-0.1.1-portable.exe` | Single file, no install. Unpacks itself on every launch, so it takes a few seconds to start. |
 | `win-unpacked/` | The unpacked app the two above are built from. |
 
 ### Step-by-step (if you only changed one layer)

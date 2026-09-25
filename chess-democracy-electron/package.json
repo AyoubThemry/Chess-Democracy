@@ -1,6 +1,6 @@
 {
   "name": "chess-democracy-electron",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Decentralised peer-to-peer chess — no server required",
   "author": "Ayoub Themry",
   "main": "dist/main.js",
@@ -15,7 +15,8 @@
     "build": "tsc",
     "build:core": "cd ../chess-democracy-core && npm run build",
     "build:react": "cd ReactChessDemocracy && npm run build",
-    "build:release": "npm run build:core && npm run build:react && npm run build && npm run dist",
+    "stage:core": "node scripts/stage-core.mjs",
+    "build:release": "npm run build:core && npm run stage:core && npm run build:react && npm run build && npm run dist",
     "start": "npm run build && electron .",
     "kill": "powershell -Command \"Stop-Process -Name 'Chess Democracy' -Force -ErrorAction SilentlyContinue; Start-Sleep -Seconds 2; Remove-Item -Recurse -Force release -ErrorAction SilentlyContinue; exit 0\"",
     "dist": "npm run kill && cross-env CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder"
@@ -25,6 +26,7 @@
     "productName": "Chess Democracy",
     "forceCodeSigning": false,
     "icon": "build/icon",
+    "electronLanguages": ["en-US"],
     "directories": {
       "output": "release"
     },
@@ -39,7 +41,7 @@
         "filter": ["**/*"]
       },
       {
-        "from": "../chess-democracy-core",
+        "from": "staging/chess-democracy-core",
         "to": "chess-democracy-core",
         "filter": ["dist/**", "package.json", "node_modules/**"]
       }
