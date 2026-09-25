@@ -129,22 +129,35 @@ describe('MessageService.HandleMessage', () => {
         expect(peer.team).toBe('white');
     });
 
-    it('handles "time_sync_response" — calls setTimeOffset with correct value', () => {
-        const clientTime = Date.now() - 200;
-        const serverTime = Date.now();
+    // Sent at 1_000, answered, received at 1_200: a 200 ms round trip.
+    function syncResponse(serverTime: number) {
+        vi.useFakeTimers({ toFake: ['Date'] });
+        vi.setSystemTime(1_200);
         const payload = {
             type:        'time_sync_response',
-            client_time: clientTime,
+            client_time: 1_000,
             server_time: serverTime,
             nonce:       randomUUID(),
-            timestamp:   Date.now(),
+            timestamp:   1_200,
         };
         const sig = signMessage(JSON.stringify(payload), sender.privateKey);
         MessageService.HandleMessage(
             payload, sig, sender.publicKey,
             peers, receiver.publicKey, receiver.privateKey, makeCallbacks({ setTimeOffset: noop }),
         );
-        expect(noop).toHaveBeenCalledWith(serverTime - clientTime);
+        vi.useRealTimers();
+    }
+
+    it('time_sync_response: same clocks and a 200 ms round trip mean no offset', () => {
+        // The master answered halfway through the trip, at 1_100 on its clock.
+        syncResponse(1_100);
+        expect(noop).toHaveBeenCalledWith(0);
+    });
+
+    it('time_sync_response: finds a real clock difference despite the delay', () => {
+        // The master's clock runs 5 s ahead, so it read 6_100 halfway through.
+        syncResponse(6_100);
+        expect(noop).toHaveBeenCalledWith(5_000);
     });
 
     it('handles "time_sync_request" — sends a response via the peer socket', () => {
