@@ -261,7 +261,8 @@ export default function GameScreen() {
     useEffect(() => {
         const api = (window as any).chessDemocracy;
         const unsub1 = api.on.drawOffered((d: any) => {
-            if (!d.fromSelf) setDrawOffered(true);
+            // Only the side that was offered the draw can answer it.
+            if (!d.fromSelf && d.byOpponent) setDrawOffered(true);
         });
         const unsub2 = api.on.drawDeclined((_d: any) => {
             setDrawSent(false);

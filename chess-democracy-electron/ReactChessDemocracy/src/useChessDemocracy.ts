@@ -187,7 +187,10 @@ export function useChessDemocracy(): void {
 
 
         const unsubDrawOffered  = api.on.drawOffered?.((data: any) => {
-            store.setNotification({ type: 'info', message: data.fromSelf ? 'You offered a draw.' : 'Opponent offered a draw.' });
+            const message = data.fromSelf ? 'You offered a draw.'
+                          : data.byOpponent ? 'Opponent offered a draw.'
+                          : 'A teammate offered a draw. The other side decides.';
+            store.setNotification({ type: 'info', message });
         });
         const unsubDrawDeclined = api.on.drawDeclined?.(() => {
             store.setNotification({ type: 'info', message: 'Draw offer declined.' });

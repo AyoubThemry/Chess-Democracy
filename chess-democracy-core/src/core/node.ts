@@ -66,6 +66,9 @@ export class Node extends EventEmitter {
     private _moveTimeoutTimer?: NodeJS.Timeout;
     private _moveTimeoutStartedAt = 0;
 
+    // Which side has a draw offer out, if any.
+    private _drawOfferedBy: Team | null = null;
+
     // Who's in the current game, and their teams. Empty outside a game.
     private readonly roster = new Map<string, Team>();
     // After a player reconnects, don't count votes until states are exchanged.
@@ -210,14 +213,22 @@ export class Node extends EventEmitter {
 
     public offerDraw(): string {
         if (this.game.phase !== 'in_progress') return `error:not_in_progress`;
+        this._drawOfferedBy = this.game.myTeam;
         this.net?.broadcastDrawOffer();
-        this.emit('draw:offered', { from: this.identity.publicKey, fromSelf: true });
+        this.emit('draw:offered', { from: this.identity.publicKey, fromSelf: true, byOpponent: false });
         logger.info(`Draw offered by self`);
         return 'ok';
     }
 
     public respondToDraw(accept: boolean): string {
         if (this.game.phase !== 'in_progress') return `error:not_in_progress`;
+        // Only the side that was offered the draw can take it. Otherwise one
+        // player could offer and a teammate accept, settling the game for the
+        // whole team without the other side agreeing.
+        if (!this._drawOfferedBy || this._drawOfferedBy === this.game.myTeam) {
+            return 'error:no_draw_offer_from_opponent';
+        }
+        this._drawOfferedBy = null;
         if (accept) {
             this.game.finish({ winner: 'draw', reason: 'draw_agreement' });
             clearTimeout(this._voteTimer);
@@ -345,14 +356,20 @@ export class Node extends EventEmitter {
             },
 
             onDrawOffer: (senderKey) => {
-                this.emit('draw:offered', { from: senderKey, fromSelf: false });
+                if (this.game.phase !== 'in_progress') return;
+                const team = this.teamOf(senderKey);
+                if (!team) return;
+                this._drawOfferedBy = team;
+                // Teammates see the offer too, but only the other side may answer it.
+                this.emit('draw:offered', { from: senderKey, fromSelf: false, byOpponent: team !== this.game.myTeam });
             },
 
-            onDrawResponse: (_senderKey, accepted) => {
+            onDrawResponse: (senderKey, accepted) => {
                 // accepted=true path: accepter already broadcast game_over; handleGameOver handles it.
                 // declined path: let offeror know via the draw:declined event.
                 if (!accepted) {
-                    this.emit('draw:declined', { by: _senderKey });
+                    this._drawOfferedBy = null;
+                    this.emit('draw:declined', { by: senderKey });
                 }
             },
 
@@ -1158,7 +1175,11 @@ export class Node extends EventEmitter {
 
         switch (result?.reason) {
             case 'draw_agreement':
-                return result.winner === 'draw' ? null : 'draw_with_a_winner';
+                if (result.winner !== 'draw')          return 'draw_with_a_winner';
+                if (!this._drawOfferedBy)              return 'no_draw_was_offered';
+                // Accepted by the side that offered it: nobody on the other side agreed.
+                if (senderTeam === this._drawOfferedBy) return 'draw_accepted_by_offering_side';
+                return null;
 
             case 'timeout': {
                 if (result.winner !== null) return 'timeout_with_a_winner';
@@ -1407,6 +1428,7 @@ export class Node extends EventEmitter {
 
         this.game.reset();
         this.roster.clear();
+        this._drawOfferedBy = null;
         this._resyncGraceUntil = 0;
         this._voting    = null;
         this._gameMode  = 'voting';

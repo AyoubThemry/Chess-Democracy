@@ -120,8 +120,42 @@ describe('Node rejects messages from peers who may not send them', () => {
         expect(phase()).toBe('finished');
     });
 
-    it('accepts an agreed draw', () => {
+    // ── draws: only the side that was offered one may accept it ──────────
+
+    it('accepts a draw the other side agreed to', () => {
+        node.offerDraw();                                            // white offers
         gameOver('black-opponent', 'game-1', 'draw', 'draw_agreement');
+        expect(phase()).toBe('finished');
+    });
+
+    it('ignores a draw nobody offered', () => {
+        gameOver('black-opponent', 'game-1', 'draw', 'draw_agreement');
+        expect(phase()).toBe('in_progress');
+    });
+
+    it('ignores a draw accepted by the side that offered it', () => {
+        cb.onDrawOffer('black-opponent');                            // black offers...
+        gameOver('black-opponent', 'game-1', 'draw', 'draw_agreement'); // ...and black "accepts"
+        expect(phase()).toBe('in_progress');
+    });
+
+    it("won't let a player accept their own team's offer", () => {
+        cb.onDrawOffer('white-teammate');
+        expect(node.respondToDraw(true)).toBe('error:no_draw_offer_from_opponent');
+        expect(phase()).toBe('in_progress');
+    });
+
+    it("tells the UI whether an offer came from the opponent or a teammate", () => {
+        const offered = vi.fn();
+        node.on('draw:offered', offered);
+        cb.onDrawOffer('white-teammate');
+        cb.onDrawOffer('black-opponent');
+        expect(offered.mock.calls.map(c => c[0].byOpponent)).toEqual([false, true]);
+    });
+
+    it("lets a player accept the opponent's offer", () => {
+        cb.onDrawOffer('black-opponent');
+        expect(node.respondToDraw(true)).toBe('ok');
         expect(phase()).toBe('finished');
     });
 });
