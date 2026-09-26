@@ -192,8 +192,8 @@ Artifacts land in `chess-democracy-electron/release/`:
 
 | File | What it is |
 |---|---|
-| `Chess Democracy Setup 0.1.2.exe` | Installer. Recommended: installs once, then starts in under a second. |
-| `ChessDemocracy-0.1.2-portable.exe` | Single file, no install. Unpacks itself on every launch, so it takes a few seconds to start. |
+| `Chess Democracy Setup 0.1.3.exe` | Installer. Recommended: installs once, then starts in under a second. |
+| `ChessDemocracy-0.1.3-portable.exe` | Single file, no install. Unpacks itself on every launch, so it takes a few seconds to start. |
 | `win-unpacked/` | The unpacked app the two above are built from. |
 
 ### Step-by-step (if you only changed one layer)
