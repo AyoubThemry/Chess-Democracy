@@ -158,6 +158,46 @@ describe('HyperswarmNetwork handshake', () => {
     });
 });
 
+describe('HyperswarmNetwork reach', () => {
+    afterEach(() => vi.useRealTimers());
+
+    /** A network whose swarm has "found" these hyperswarm keys in the room. */
+    function withFound(n: ReturnType<typeof makeNode>, ...found: string[]) {
+        (n.net as any).swarm = {
+            peers: new Map(found.map(k => [k, {}])),
+            dht:   { firewalled: true, randomized: true, port: 0, stats: { punches: {} } },
+            stats: { connects: { client: { attempted: 1, opened: 0 } } },
+        };
+        const reports: unknown[] = [];
+        n.net.on('reach', r => reports.push({ ...r }));
+        return { check: () => (n.net as any).checkReach(), reports };
+    }
+
+    it('reports a player found but not connected yet', () => {
+        const { check, reports } = withFound(makeNode(), 'a');
+        check();
+        expect(reports).toEqual([{ found: 1, connected: 0, stuck: false }]);
+    });
+
+    it('says it is stuck once a found player stays unreached', () => {
+        vi.useFakeTimers();
+        const { check, reports } = withFound(makeNode(), 'a');
+        check();
+        vi.advanceTimersByTime(21_000);
+        check();
+        expect(reports.at(-1)).toEqual({ found: 1, connected: 0, stuck: true });
+    });
+
+    it('is not stuck once everyone found is connected', async () => {
+        const a = makeNode(), b = makeNode();
+        link(a, b);
+        await until(() => a.peers.size === 1);
+        const { check, reports } = withFound(a, b.net.swarmKey);
+        check();
+        expect(reports).toEqual([{ found: 1, connected: 1, stuck: false }]);
+    });
+});
+
 describe('roomTopic', () => {
     it('gives the same topic for the same code however it is typed', () => {
         expect(roomTopic(' ABcd-2345 ').equals(roomTopic('abcd-2345'))).toBe(true);

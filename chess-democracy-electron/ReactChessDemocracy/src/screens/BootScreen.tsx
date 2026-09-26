@@ -10,6 +10,7 @@ import { useState } from 'react';
 import { useStore }  from '../store';
 import { leaveNetwork } from '../useChessDemocracy';
 import RoomShare from './RoomShare';
+import RoomReachNote from './RoomReachNote';
 import type { Team } from '../ipc-types';
 import './BootScreen.css';
 import './NetworkScreen.css';
@@ -49,7 +50,7 @@ export default function BootScreen() {
                 <div className="boot-logo">♟</div>
                 <h1>Chess Democracy</h1>
                 <p>{network === 'global' ? 'Playing over the internet' : 'Playing on your local network'}</p>
-                {network === 'global' && <RoomShare />}
+                {network === 'global' && <><RoomShare /><RoomReachNote /></>}
             </header>
 
             <div className="boot-card">

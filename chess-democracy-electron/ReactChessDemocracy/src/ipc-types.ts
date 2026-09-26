@@ -87,6 +87,14 @@ export interface NetworkOption {
 
 export type Visibility = 'public' | 'private';
 
+/** Over the internet: players found in the room versus players actually reached. */
+export interface RoomReach {
+    found:     number;
+    connected: number;
+    /** Someone was found but hasn't been reached for a while. */
+    stuck:     boolean;
+}
+
 /** A public game open to join, as listed in the internet lobby. */
 export interface PublicGame {
     room:      string;

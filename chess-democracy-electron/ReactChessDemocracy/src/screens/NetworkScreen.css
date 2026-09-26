@@ -242,3 +242,12 @@
 }
 .room-share-kind--public  { background: rgba(86, 197, 150, 0.15); color: var(--success); }
 .room-share-kind--private { background: var(--surface-alt);       color: var(--text-dim); }
+
+/* Found in the room but not connected yet (or at all) */
+.room-reach {
+    max-width: 30rem;
+    font-size: 0.78rem;
+    line-height: 1.5;
+    color: var(--text-dim);
+}
+.room-reach--stuck { color: var(--warning); }

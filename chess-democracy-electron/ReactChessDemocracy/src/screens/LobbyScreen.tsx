@@ -4,6 +4,7 @@ import { useStore }  from '../store';
 import type { Team, PeerSummary } from '../ipc-types';
 import { leaveNetwork } from '../useChessDemocracy';
 import RoomShare from './RoomShare';
+import RoomReachNote from './RoomReachNote';
 import './LobbyScreen.css';
 import './NetworkScreen.css';
 
@@ -240,6 +241,8 @@ export default function LobbyScreen() {
 
                 {/* ── Countdown (starting phase only) ────────────────────── */}
                 {isStarting && <CountdownBanner ms={countdownMs} />}
+
+                {network === 'global' && <RoomReachNote />}
 
                 {/* ── Peer list ───────────────────────────────────────────── */}
                 <section className="peer-section">

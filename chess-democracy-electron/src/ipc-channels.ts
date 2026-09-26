@@ -248,6 +248,7 @@ export const PUSH = {
     RESIGN_VOTE_STARTED:  'resign:vote_started',
     RESIGN_VOTE_UPDATED:  'resign:vote_updated',
     RESIGN_VOTE_EXPIRED:  'resign:vote_expired',
+    NETWORK_REACH:        'network:reach',
 
 } as const;
 
@@ -362,6 +363,12 @@ export interface PushMap {
         connectedTeamSize: number;
     };
     [PUSH.RESIGN_VOTE_EXPIRED]: Record<string, never>;
+    /** Over the internet: players found in the room versus players reached. */
+    [PUSH.NETWORK_REACH]: {
+        found:     number;
+        connected: number;
+        stuck:     boolean;
+    };
 }
 
 // window.chessDemocracy — full type exposed to React by preload.ts
@@ -417,6 +424,7 @@ export interface ChessDemocracyAPI {
         resignVoteStarted(  cb: (data: PushMap[typeof PUSH.RESIGN_VOTE_STARTED])    => void): () => void;
         resignVoteUpdated(  cb: (data: PushMap[typeof PUSH.RESIGN_VOTE_UPDATED])    => void): () => void;
         resignVoteExpired(  cb: (data: PushMap[typeof PUSH.RESIGN_VOTE_EXPIRED])    => void): () => void;
+        networkReach(       cb: (data: PushMap[typeof PUSH.NETWORK_REACH])          => void): () => void;
     };
 }
 
