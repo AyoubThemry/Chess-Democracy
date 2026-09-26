@@ -85,6 +85,11 @@ export const INVOKE = {
     IDENTITY_LOGOUT:    'identity:logout',
     IDENTITY_OPEN_FILE: 'identity:open_file',
 
+    // Network — picked after login, before choosing a side
+    NETWORK_GET_OPTIONS: 'network:get_options',
+    NETWORK_CONNECT:     'network:connect',
+    NETWORK_LEAVE:       'network:leave',
+
 } as const;
 
 export type InvokeChannel = typeof INVOKE[keyof typeof INVOKE];
@@ -169,6 +174,25 @@ export interface InvokeMap {
         payload: void;
         result:  IpcResult<{ filePath: string | null }>;
     };
+    [INVOKE.NETWORK_GET_OPTIONS]: {
+        payload: void;
+        result:  IpcResult<NetworkOption[]>;
+    };
+    [INVOKE.NETWORK_CONNECT]: {
+        payload: { network: NetworkKind };
+        result:  IpcResult<{ network: NetworkKind }>;
+    };
+    [INVOKE.NETWORK_LEAVE]: {
+        payload: void;
+        result:  IpcResult<void>;
+    };
+}
+
+export type NetworkKind = 'local' | 'global';
+
+export interface NetworkOption {
+    kind:      NetworkKind;
+    available: boolean;
 }
 
 export interface ConfigSnapshot {
@@ -341,6 +365,11 @@ export interface ChessDemocracyAPI {
     saveIdentityPref(identityPath: string): Promise<InvokeMap[typeof INVOKE.IDENTITY_SAVE_PREF]['result']>;
     logout():           Promise<InvokeMap[typeof INVOKE.IDENTITY_LOGOUT]['result']>;
     openIdentityFile(): Promise<InvokeMap[typeof INVOKE.IDENTITY_OPEN_FILE]['result']>;
+
+    getNetworkOptions(): Promise<InvokeMap[typeof INVOKE.NETWORK_GET_OPTIONS]['result']>;
+    connectNetwork(network: NetworkKind): Promise<InvokeMap[typeof INVOKE.NETWORK_CONNECT]['result']>;
+    /** Back to the network screen. Only before Ready; a running game stays on its network. */
+    leaveNetwork():      Promise<InvokeMap[typeof INVOKE.NETWORK_LEAVE]['result']>;
     offerDraw():        Promise<InvokeMap[typeof INVOKE.GAME_OFFER_DRAW]['result']>;
     respondToDraw(accept: boolean): Promise<InvokeMap[typeof INVOKE.GAME_RESPOND_DRAW]['result']>;
 

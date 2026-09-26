@@ -14,7 +14,7 @@ import {
     sendMove,
     sendGameOver,
 } from "../game/game-protocol.js";
-import { MessageCallbacks }        from "../network/localnetwork/message-service.js";
+import { MessageCallbacks }        from "../network/message-service.js";
 import { randomUUID }              from "crypto";
 import { EventEmitter }            from "events";
 import { join }                    from "node:path";

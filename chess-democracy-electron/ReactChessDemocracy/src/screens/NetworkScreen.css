@@ -1,0 +1,38 @@
+/* NetworkScreen.css — builds on BootScreen.css (same card and button layout) */
+
+.network-btn {
+    background: #23213a;
+    color: var(--text);
+    border: 2px solid #3a3660;
+}
+
+.network-btn:hover:not(:disabled) { border-color: var(--accent); }
+
+.network-btn--local .side-icon  { color: #f4c53a; }
+.network-btn--global .side-icon { color: var(--accent); }
+
+.network-switch-identity {
+    background: none;
+    border: none;
+    color: var(--text-dim);
+    font-size: 0.8rem;
+    cursor: pointer;
+    opacity: 0.6;
+}
+
+.network-switch-identity:hover,
+.network-switch-identity:focus-visible { opacity: 1; text-decoration: underline; }
+
+/* "Change network" on the side and lobby screens */
+.change-network-btn {
+    background: none;
+    border: none;
+    color: var(--text-dim);
+    font-size: 0.8rem;
+    cursor: pointer;
+    opacity: 0.6;
+}
+
+.change-network-btn:hover:not(:disabled),
+.change-network-btn:focus-visible { opacity: 1; text-decoration: underline; }
+.change-network-btn:disabled      { cursor: not-allowed; }

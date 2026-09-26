@@ -6,8 +6,9 @@
  *   1. Generate new key  — creates a fresh Ed25519 keypair at the default path.
  *   2. Import key        — opens a file picker for an existing .pem file.
  *
- * After starting the node, the user can check "Remember me" to skip this screen
- * on the next launch. Then we set isAuthenticated = true and hydrate the store.
+ * This only loads or creates the key; nothing connects yet. The user can check
+ * "Remember me" to skip this screen next launch. After it comes the network
+ * screen, where they pick local or global play.
  */
 
 import { useState } from 'react';
@@ -25,28 +26,8 @@ export default function LoginScreen() {
     const [remember,    setRemember]    = useState(true);
 
     const setAuthenticated  = useStore(s => s.setAuthenticated);
-    const setHydrated       = useStore(s => s.setHydrated);
-    const setIdentity       = useStore(s => s.setIdentity);
-    const applySnapshot     = useStore(s => s.applySnapshot);
-    const setPeers          = useStore(s => s.setPeers);
-    const applyConfigSnapshot = useStore(s => s.applyConfigSnapshot);
 
     const api = () => (window as any).chessDemocracy;
-
-    async function hydrateStore() {
-        const a = api();
-        const [idRes, stateRes, peersRes, configRes] = await Promise.all([
-            a.getIdentity(),
-            a.getState(),
-            a.getPeers(),
-            a.getConfig(),
-        ]);
-        if (idRes.ok)     setIdentity(idRes.value);
-        if (stateRes.ok)  applySnapshot(stateRes.value);
-        if (peersRes.ok)  setPeers(peersRes.value);
-        if (configRes.ok) applyConfigSnapshot(configRes.value);
-        setHydrated();
-    }
 
     async function handleGenerate() {
         setError(null);
@@ -93,7 +74,7 @@ export default function LoginScreen() {
             if (remember) {
                 await api().saveIdentityPref(identityPath);
             }
-            await hydrateStore();
+            // Just the identity. The network screen comes next.
             setAuthenticated(true);
         } catch (e: any) {
             setError(e?.message ?? 'Unknown error');
@@ -180,7 +161,7 @@ export default function LoginScreen() {
 
                         <p className="remember-hint">
                             {remember
-                                ? 'Next launch will go straight to the lobby.'
+                                ? 'Next launch will skip this screen.'
                                 : 'You will see this screen again on next launch.'
                             }
                         </p>
@@ -200,7 +181,7 @@ export default function LoginScreen() {
                                 onClick={handleEnter}
                                 disabled={loading}
                             >
-                                {loading ? <span className="btn-spinner" /> : 'Enter lobby →'}
+                                {loading ? <span className="btn-spinner" /> : 'Continue →'}
                             </button>
                         </div>
                     </>

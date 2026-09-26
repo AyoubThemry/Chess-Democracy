@@ -75,3 +75,10 @@ export interface GameSnapshot {
 export type IpcResult<T = void> =
     | { ok: true;  value: T }
     | { ok: false; error: string };
+
+export type NetworkKind = 'local' | 'global';
+
+export interface NetworkOption {
+    kind:      NetworkKind;
+    available: boolean;
+}

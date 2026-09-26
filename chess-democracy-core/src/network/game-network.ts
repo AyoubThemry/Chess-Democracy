@@ -4,7 +4,7 @@ import type { Team } from '../game/game-state.js';
 import type { GameConfig, SignedVote } from '../game/voting-state.js';
 import type { TallyClaim } from '../game/verify-tally.js';
 import type { GameSnapshot } from '../game/snapshot.js';
-import type { MessageCallbacks } from './localnetwork/message-service.js';
+import type { MessageCallbacks } from './message-service.js';
 
 /**
  * What Node needs from a transport. The LAN version is LocalNetworkController

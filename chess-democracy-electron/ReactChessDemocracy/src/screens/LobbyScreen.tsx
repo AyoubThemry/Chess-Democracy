@@ -2,7 +2,9 @@
 import { useState }  from 'react';
 import { useStore }  from '../store';
 import type { Team, PeerSummary } from '../ipc-types';
+import { leaveNetwork } from '../useChessDemocracy';
 import './LobbyScreen.css';
+import './NetworkScreen.css';
 
 const MIN_WINDOW_SECS  = 5;
 const MAX_WINDOW_SECS  = 120;
@@ -73,6 +75,7 @@ export default function LobbyScreen() {
     const applyConfigSnapshot = useStore(s => s.applyConfigSnapshot);
     const setSelfAccepted     = useStore(s => s.setSelfAcceptedConfig);
     const setNotification     = useStore(s => s.setNotification);
+    const network             = useStore(s => s.network);
 
     const [readying,       setReadying]      = useState(false);
     const [switching,      setSwitching]     = useState<Team | null>(null);
@@ -207,6 +210,18 @@ export default function LobbyScreen() {
                         {identity?.publicKey.slice(0, 12)}…
                     </span>
                     <TeamBadge team={myTeam} />
+                    <button
+                        className="change-network-btn"
+                        // After Ready you're committed to this game on this network.
+                        disabled={phase !== 'waiting_for_ready'}
+                        title={phase === 'waiting_for_ready' ? 'Back to the network choice' : 'Cancel Ready first'}
+                        onClick={async () => {
+                            const problem = await leaveNetwork();
+                            if (problem) setNotification({ type: 'error', message: problem });
+                        }}
+                    >
+                        {network === 'global' ? 'Internet' : 'Local network'} · change
+                    </button>
                     <button
                         className="logout-btn"
                         title="Switch identity"

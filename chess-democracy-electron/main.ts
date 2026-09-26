@@ -284,17 +284,43 @@ function unregisterGameHandlers(): void {
     ].forEach(ch => ipcMain.removeHandler(ch));
 }
 
-async function startNode(identityPath?: string): Promise<{ publicKey: string; identityPath: string }> {
-    // Idempotent — if already running, return current identity
-    if (node) return { publicKey: node.identity.publicKey, identityPath: identityPath ?? defaultIdentityPath() };
+// Starting up is two steps. Login only loads (or creates) the player's key;
+// no networking happens until they pick a network. Then a Node is created
+// with that network's transport and started.
 
-    const corePath = app.isPackaged
-        ? path.join(process.resourcesPath, 'chess-democracy-core', 'dist', 'core', 'node.js')
-        : path.join(__dirname, '..', '..', 'chess-democracy-core', 'dist', 'core', 'node.js');
-    const { Node } = await import(corePath) as { Node: new (identityPath?: string) => NodeInterface };
+let identityPath: string | null = null;   // chosen at login
+let networkKind:  string | null = null;   // chosen on the network screen
 
-    const resolvedPath = identityPath ?? defaultIdentityPath();
-    node = new Node(resolvedPath);
+/** Loads a module from the core, in dev or in the packaged app. */
+function coreModule<T>(relative: string): Promise<T> {
+    const base = app.isPackaged
+        ? path.join(process.resourcesPath, 'chess-democracy-core', 'dist')
+        : path.join(__dirname, '..', '..', 'chess-democracy-core', 'dist');
+    return import(path.join(base, ...relative.split('/'))) as Promise<T>;
+}
+
+async function loadIdentity(requestedPath?: string): Promise<{ publicKey: string; identityPath: string }> {
+    const resolvedPath = requestedPath ?? defaultIdentityPath();
+    const { loadOrCreateIdentity } = await coreModule<{
+        loadOrCreateIdentity(p: string): { publicKey: string };
+    }>('protocol/identity-store.js');
+    const { publicKey } = loadOrCreateIdentity(resolvedPath);
+    identityPath = resolvedPath;
+    return { publicKey, identityPath: resolvedPath };
+}
+
+async function connectNetwork(kind: string): Promise<void> {
+    if (!identityPath) throw new Error('no_identity');
+
+    const [{ Node }, { networkFactory }] = await Promise.all([
+        coreModule<{ Node: new (identityPath?: string, createNetwork?: unknown) => NodeInterface }>('core/node.js'),
+        coreModule<{ networkFactory(kind: string): unknown }>('network/networks.js'),
+    ]);
+    const factory = networkFactory(kind);   // throws for one that isn't available
+
+    stopNode();                             // switching: drop the old network first
+    node = new Node(identityPath, factory);
+    networkKind = kind;
     node.boot(0);
 
     // Push node events → renderer
@@ -322,8 +348,12 @@ async function startNode(identityPath?: string): Promise<{ publicKey: string; id
     node.on('resign:vote_expired',  ()       => push(PUSH.RESIGN_VOTE_EXPIRED,  {}));
 
     registerGameHandlers();
+}
 
-    return { publicKey: node.identity.publicKey, identityPath: resolvedPath };
+function stopNode(): void {
+    if (node) { node.stop(); node = null; }
+    networkKind = null;
+    unregisterGameHandlers();
 }
 
 // ---
@@ -344,11 +374,35 @@ function registerIdentityHandlers(): void {
                 const target = payload?.identityPath ?? defaultIdentityPath();
                 if (fs.existsSync(target)) fs.unlinkSync(target);
             }
-            const result = await startNode(payload?.identityPath ?? undefined);
-            return ok(result);
+            return ok(await loadIdentity(payload?.identityPath ?? undefined));
         } catch (err: any) {
-            return fail(err?.message ?? 'failed_to_start_node');
+            return fail(err?.message ?? 'failed_to_load_identity');
         }
+    });
+
+    ipcMain.handle(INVOKE.NETWORK_GET_OPTIONS, async () => {
+        const { networkOptions } = await coreModule<{ networkOptions(): unknown }>('network/networks.js');
+        return ok(networkOptions());
+    });
+
+    ipcMain.handle(INVOKE.NETWORK_CONNECT, async (_e: IpcMainInvokeEvent, payload: { network: string }) => {
+        try {
+            await connectNetwork(payload?.network);
+            return ok({ network: payload.network });
+        } catch (err: any) {
+            return fail(err?.message ?? 'failed_to_connect');
+        }
+    });
+
+    ipcMain.handle(INVOKE.NETWORK_LEAVE, () => {
+        // A running game lives on one network. Leaving mid-game would just drop
+        // the player from it, so only allow it before pressing Ready.
+        const phase = node?.gameState.phase;
+        if (phase && phase !== 'waiting_for_side' && phase !== 'waiting_for_ready') {
+            return fail(`in_game:${phase}`);
+        }
+        stopNode();
+        return ok(undefined);
     });
 
     ipcMain.handle(INVOKE.IDENTITY_SAVE_PREF, (_e: IpcMainInvokeEvent, payload: { identityPath: string }) => {
@@ -360,8 +414,8 @@ function registerIdentityHandlers(): void {
     ipcMain.handle(INVOKE.IDENTITY_LOGOUT, () => {
         const prefs = readPrefs();
         writePrefs({ ...prefs, remembered: false });
-        if (node) { node.stop(); node = null; }
-        unregisterGameHandlers();
+        stopNode();
+        identityPath = null;
         // Reload the window so React re-mounts fresh and shows the login screen
         win?.webContents.reload();
         return ok(undefined);
@@ -400,6 +454,7 @@ app.on('before-quit', () => {
         INVOKE.IDENTITY_GET_PREFS, INVOKE.IDENTITY_START,
         INVOKE.IDENTITY_SAVE_PREF, INVOKE.IDENTITY_LOGOUT,
         INVOKE.IDENTITY_OPEN_FILE,
+        INVOKE.NETWORK_GET_OPTIONS, INVOKE.NETWORK_CONNECT, INVOKE.NETWORK_LEAVE,
     ].forEach(ch => ipcMain.removeHandler(ch));
 });
 
