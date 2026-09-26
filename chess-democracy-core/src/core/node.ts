@@ -470,6 +470,7 @@ export class Node extends EventEmitter {
 
             network.on('peer:connected',    (p: Peer) => this.addPeer(p));
             network.on('peer:disconnected', (p: Peer) => this.handlePeerDisconnect(p));
+            network.on('reach',             (r: unknown) => this.emit('network:reach', r));   // internet only
             network.start();
         }).catch((err: unknown) => {
             logger.error(`Network failed to start`, { message: err instanceof Error ? err.message : String(err) });

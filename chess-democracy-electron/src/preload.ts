@@ -116,6 +116,7 @@ const api: ChessDemocracyAPI = {
     resignVoteStarted:  (cb: (data: any) => void) => listen(PUSH.RESIGN_VOTE_STARTED,   cb),
     resignVoteUpdated:  (cb: (data: any) => void) => listen(PUSH.RESIGN_VOTE_UPDATED,   cb),
     resignVoteExpired:  (cb: (data: any) => void) => listen(PUSH.RESIGN_VOTE_EXPIRED,   cb),
+    networkReach:       (cb: (data: any) => void) => listen(PUSH.NETWORK_REACH,         cb),
 },
 };
 

@@ -79,7 +79,7 @@ export class Logger {
     constructor(
         nodeId:   string,
         level:    LogLevel = LogLevel.INFO,
-        logDir:   string   = process.cwd(),
+        logDir:   string   = process.env.CHESS_DEMOCRACY_LOG_DIR ?? process.cwd(),
         fileName: string   = 'hive_activity.log',
     ) {
         this.nodeId  = nodeId.slice(0, 12); // keep it short in output
@@ -89,6 +89,7 @@ export class Logger {
         // Ensure the log file exists (createWriteStream would do this too, but
         // appendFileSync on first write is simpler without a persistent handle).
         if (!fs.existsSync(this.logPath)) {
+            fs.mkdirSync(logDir, { recursive: true });
             fs.writeFileSync(this.logPath, '', 'utf8');
         }
 

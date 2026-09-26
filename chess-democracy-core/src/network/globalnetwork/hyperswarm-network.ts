@@ -24,7 +24,17 @@ export interface GlobalNetworkOptions {
 const DISCOVERY = {
     LOOKUP_ALONE_MS:  3_000,   // how often to look the room up while nobody's here yet
     LOOKUP_MS:       15_000,   // and afterwards, to catch players we missed
+    REACH_CHECK_MS:   2_000,   // how often to compare players found with players reached
+    STUCK_MS:        20_000,   // found but not reached for this long: probably a NAT that won't open
 };
+
+/** Players found in the room, and how many of them we're actually connected to. */
+export interface RoomReach {
+    found:     number;
+    connected: number;
+    /** Someone was found but hasn't been reached for a while. */
+    stuck:     boolean;
+}
 
 /** Players find each other by joining the same topic: a hash of the room code. */
 export function roomTopic(room: string): Buffer {
@@ -54,7 +64,10 @@ export class HyperswarmNetwork extends PeerMessaging implements GameNetwork {
     private pingInterval?:  NodeJS.Timeout;
     private ghostInterval?: NodeJS.Timeout;
     private lookupTimer?:   NodeJS.Timeout;
+    private reachInterval?: NodeJS.Timeout;
     private advertiser?:    LobbyAdvertiser;
+    private lastReach:      RoomReach = { found: 0, connected: 0, stuck: false };
+    private unreachedSince: number | null = null;
 
     constructor(ctx: NetworkContext, private readonly options: GlobalNetworkOptions) {
         super();
@@ -83,6 +96,13 @@ export class HyperswarmNetwork extends PeerMessaging implements GameNetwork {
         logger.info(`Joined room`, { topic: roomTopic(this.options.room).toString('hex').slice(0, 8) });
         this.scheduleLookup();
 
+        const swarm = this.swarm;
+        swarm.dht.fullyBootstrapped().then(() => {
+            logger.info(`Internet connection ready`, { nat: natType(swarm) });
+        }).catch(() => {});
+        this.reachInterval = setInterval(() => this.checkReach(), DISCOVERY.REACH_CHECK_MS);
+        this.reachInterval.unref();
+
         if (this.options.public) {
             this.advertiser = new LobbyAdvertiser(this.identity, this.options.room, this.summary, this.options.bootstrap);
             this.advertiser.start();
@@ -100,6 +120,7 @@ export class HyperswarmNetwork extends PeerMessaging implements GameNetwork {
     stop(): void {
         this.advertiser?.stop();
         clearTimeout(this.lookupTimer);
+        clearInterval(this.reachInterval);
         clearInterval(this.pingInterval);
         clearInterval(this.ghostInterval);
         this.nonces.clear();
@@ -200,6 +221,45 @@ export class HyperswarmNetwork extends PeerMessaging implements GameNetwork {
         this.lookupTimer.unref();
     }
 
+    /** Where the room stands: who we found versus who we reached. */
+    get reach(): RoomReach {
+        return this.lastReach;
+    }
+
+    /**
+     * Compares the players hyperswarm found in the room with the ones we're
+     * actually playing with. When someone is found but never reached, their
+     * network or ours is refusing the direct connection, and without this
+     * nothing would say so: the room would just look empty.
+     */
+    private checkReach(): void {
+        if (!this.swarm) return;
+        const found     = this.swarm.peers.size;
+        const connected = [...this.getAllPeers().values()].filter(p => p.status === PeerStatus.Alive).length;
+
+        if (found > connected) this.unreachedSince ??= Date.now();
+        else                   this.unreachedSince = null;
+        const stuck = this.unreachedSince !== null && Date.now() - this.unreachedSince > DISCOVERY.STUCK_MS;
+
+        const last = this.lastReach;
+        if (found === last.found && connected === last.connected && stuck === last.stuck) return;
+        this.lastReach = { found, connected, stuck };
+
+        if (stuck && !last.stuck) {
+            const { dht, stats } = this.swarm;
+            logger.warn(`Found players we can't connect to`, {
+                found, connected,
+                nat:      natType(this.swarm),
+                attempts: stats.connects.client.attempted,
+                opened:   stats.connects.client.opened,
+                punches:  dht.stats.punches,
+            });
+        } else {
+            logger.info(`Room`, { found, connected });
+        }
+        this.emit('reach', this.lastReach);
+    }
+
     /** The sender's key if this is a valid hello meant for us, otherwise null. */
     private checkHello(packet: { payload?: Record<string, unknown>; signature?: unknown }): string | null {
         const p = packet?.payload;
@@ -230,4 +290,13 @@ export class HyperswarmNetwork extends PeerMessaging implements GameNetwork {
             }
         }
     }
+}
+
+/** How our router treats incoming connections, as far as the DHT could tell. */
+function natType(swarm: Hyperswarm): string {
+    const dht = swarm.dht;
+    if (!dht.firewalled) return 'open';
+    if (dht.randomized)  return 'random';   // the hard case: a new port for every destination
+    if (dht.port)        return 'consistent';
+    return 'unknown';
 }

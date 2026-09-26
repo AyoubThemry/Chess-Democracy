@@ -12,6 +12,7 @@ import type {
     ConfigSnapshot,
     NetworkKind,
     Visibility,
+    RoomReach,
 } from './ipc-types';
 
 
@@ -97,6 +98,8 @@ export interface ChessDemocracyStore {
     room:         string | null;
     /** Whether the internet game is listed in the public lobby. */
     visibility:   Visibility | null;
+    /** Over the internet: who's been found in the room and who we've reached. */
+    reach:        RoomReach | null;
     peers:        PeerSummary[];
     game:         GameState;
     config:       ConfigState;
@@ -117,6 +120,8 @@ export interface ChessDemocracyStore {
 
     /** The network picked on the network screen (and its room code), or null to go back to it. */
     setNetwork(network: NetworkKind | null, room?: string | null, visibility?: Visibility | null): void;
+
+    setReach(reach: RoomReach): void;
 
     /** Replace the full peer list. */
     setPeers(peers: PeerSummary[]): void;
@@ -242,6 +247,7 @@ export const useStore = create<ChessDemocracyStore>((set) => ({
     network:      null,
     room:         null,
     visibility:   null,
+    reach:        null,
     peers:        [],
     game:         { ...defaultGame },
     config:       { ...defaultConfig },
@@ -262,7 +268,9 @@ export const useStore = create<ChessDemocracyStore>((set) => ({
     // Network
 
     setNetwork: (network, room = null, visibility = null) =>
-        set({ network, room: network ? room : null, visibility: network ? visibility : null }),
+        set({ network, room: network ? room : null, visibility: network ? visibility : null, reach: null }),
+
+    setReach: (reach) => set({ reach }),
 
     // Peers
 

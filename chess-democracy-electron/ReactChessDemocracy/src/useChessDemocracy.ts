@@ -186,6 +186,9 @@ export function useChessDemocracy(): void {
         const unsubResignVoteUpdated = api.on.resignVoteUpdated?.((data: any) => {
             store.updateResignVote(data.yesVotes, data.connectedTeamSize);
         });
+        const unsubNetworkReach = api.on.networkReach?.((data: any) => {
+            store.setReach(data);
+        });
         const unsubResignVoteExpired = api.on.resignVoteExpired?.(() => {
             store.closeResignVote();
             store.setNotification({ type: 'info', message: 'Resign vote expired.' });
@@ -216,6 +219,7 @@ export function useChessDemocracy(): void {
             unsubResignVoteStarted?.();
             unsubResignVoteUpdated?.();
             unsubResignVoteExpired?.();
+            unsubNetworkReach?.();
             if (countdownId.current) clearInterval(countdownId.current);
         };
 

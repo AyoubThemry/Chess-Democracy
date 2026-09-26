@@ -84,6 +84,12 @@ describe('playing over the internet', () => {
         expect(useStore.getState().visibility).toBe('public');
     });
 
+    it('drops what it knew about the room when the network changes', () => {
+        useStore.getState().setReach({ found: 2, connected: 1, stuck: true });
+        useStore.getState().setNetwork(null);
+        expect(useStore.getState().reach).toBeNull();
+    });
+
     it('forgets the room code when leaving', async () => {
         fakeBridge();
         await joinNetwork('global', 'k7mq-x2pd', 'private');

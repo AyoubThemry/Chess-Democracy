@@ -5,6 +5,7 @@
 import { app, BrowserWindow, ipcMain, IpcMainInvokeEvent, dialog } from 'electron';
 import * as path from 'path';
 import * as fs   from 'fs';
+import * as os   from 'os';
 import {
     INVOKE,
     PUSH,
@@ -346,6 +347,7 @@ async function connectNetwork(kind: string, room?: string, visibility?: string):
     node.on('resign:vote_started',  (d: any) => push(PUSH.RESIGN_VOTE_STARTED,  d));
     node.on('resign:vote_updated',  (d: any) => push(PUSH.RESIGN_VOTE_UPDATED,  d));
     node.on('resign:vote_expired',  ()       => push(PUSH.RESIGN_VOTE_EXPIRED,  {}));
+    node.on('network:reach',        (d: any) => push(PUSH.NETWORK_REACH,        d));
 
     registerGameHandlers();
 }
@@ -445,6 +447,10 @@ function registerIdentityHandlers(): void {
 // ---
 // App lifecycle
 // ---
+
+// The core logs to a file in the working directory, which for the portable
+// exe is a temp folder deleted on exit. Keep it next to the identity instead.
+process.env.CHESS_DEMOCRACY_LOG_DIR ??= path.join(os.homedir(), '.chess-democracy', 'logs');
 
 app.whenReady().then(() => {
     win = createWindow();

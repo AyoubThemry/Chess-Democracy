@@ -34,9 +34,25 @@ declare module 'hyperswarm' {
         maxPeers?:  number;
     }
 
+    export interface SwarmDHT {
+        readonly host:       string | null;   // our address as the internet sees it
+        readonly port:       number;
+        readonly firewalled: boolean;
+        readonly randomized: boolean;         // the router picks a new port per destination
+        readonly stats: {
+            punches:  { consistent: number; random: number; open: number };
+            relaying: { attempts: number; successes: number; aborts: number };
+        };
+        fullyBootstrapped(): Promise<void>;
+    }
+
     export default class Hyperswarm extends EventEmitter {
         constructor(options?: SwarmOptions);
-        readonly keyPair: KeyPair;
+        readonly keyPair:    KeyPair;
+        readonly dht:        SwarmDHT;
+        readonly peers:      Map<string, PeerInfo>;   // found on our topics, reached or not
+        readonly connecting: number;
+        readonly stats: { connects: { client: { attempted: number; opened: number; closed: number } } };
         join(topic: Buffer, options?: { server?: boolean; client?: boolean }): PeerDiscovery;
         flush(): Promise<void>;
         destroy(): Promise<void>;
