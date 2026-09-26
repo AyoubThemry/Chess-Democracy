@@ -5,7 +5,8 @@ import type { Duplex } from 'stream';
 import { PeerMessaging } from '../peer-messaging.js';
 import { MessageService, NonceStore, type MessageCallbacks } from '../message-service.js';
 import { Peer, PeerStatus } from '../peer.js';
-import type { GameNetwork, NetworkContext, NetworkFactory } from '../game-network.js';
+import type { GameNetwork, NetworkContext, NetworkFactory, GameSummary } from '../game-network.js';
+import { LobbyAdvertiser } from './lobby.js';
 import { HyperswarmConnection } from './hyperswarm-connection.js';
 import { signMessage, verifySignature } from '../../protocol/verifysignsignature.js';
 import { NETWORK_CONFIG } from '../../utils/config.js';
@@ -14,6 +15,8 @@ import { logger } from '../../utils/logger.js';
 export interface GlobalNetworkOptions {
     /** The code players share to find each other. Everyone with it lands in the same game. */
     room: string;
+    /** List the game in the public lobby so anyone can find it. */
+    public?: boolean;
     /** Tests only: a local DHT instead of the public one. */
     bootstrap?: Array<{ host: string; port: number }>;
 }
@@ -42,6 +45,7 @@ export class HyperswarmNetwork extends PeerMessaging implements GameNetwork {
     protected readonly getAllPeers: () => Map<string, Peer>;
     private readonly callbacks:     MessageCallbacks;
     private readonly accepting:     (peerKey?: string) => boolean;
+    private readonly summary:       () => GameSummary;
     private readonly nonces       = new NonceStore();
     private readonly keyPair:       KeyPair;
 
@@ -50,6 +54,7 @@ export class HyperswarmNetwork extends PeerMessaging implements GameNetwork {
     private pingInterval?:  NodeJS.Timeout;
     private ghostInterval?: NodeJS.Timeout;
     private lookupTimer?:   NodeJS.Timeout;
+    private advertiser?:    LobbyAdvertiser;
 
     constructor(ctx: NetworkContext, private readonly options: GlobalNetworkOptions) {
         super();
@@ -57,6 +62,7 @@ export class HyperswarmNetwork extends PeerMessaging implements GameNetwork {
         this.getAllPeers = ctx.getAllPeers;
         this.callbacks   = ctx.callbacks;
         this.accepting   = ctx.acceptingConnection;
+        this.summary     = ctx.summary;
         this.keyPair     = DHT.keyPair();
     }
 
@@ -77,6 +83,11 @@ export class HyperswarmNetwork extends PeerMessaging implements GameNetwork {
         logger.info(`Joined room`, { topic: roomTopic(this.options.room).toString('hex').slice(0, 8) });
         this.scheduleLookup();
 
+        if (this.options.public) {
+            this.advertiser = new LobbyAdvertiser(this.identity, this.options.room, this.summary, this.options.bootstrap);
+            this.advertiser.start();
+        }
+
         // Same keepalive and dead-peer sweep as the LAN transport.
         this.pingInterval = setInterval(() => {
             MessageService.broadcast({ type: 'ping' }, this.getAllPeers(), this.identity);
@@ -87,6 +98,7 @@ export class HyperswarmNetwork extends PeerMessaging implements GameNetwork {
     }
 
     stop(): void {
+        this.advertiser?.stop();
         clearTimeout(this.lookupTimer);
         clearInterval(this.pingInterval);
         clearInterval(this.ghostInterval);

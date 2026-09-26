@@ -6,14 +6,14 @@
  * network shows up as playable as soon as it's marked available there.
  *
  * Playing over the internet needs a room code, since there's no "same Wi-Fi"
- * to find each other by: one player creates a game and sends the code, the
- * others join with it.
+ * to find each other by. A public game is also listed here for anyone to
+ * join; a private one is only reachable with its code.
  */
 
 import { useEffect, useState } from 'react';
-import { joinNetwork } from '../useChessDemocracy';
+import { joinNetwork, browsePublicGames } from '../useChessDemocracy';
 import { newRoomCode, normalizeRoomCode } from '../roomCode';
-import type { NetworkKind, NetworkOption } from '../ipc-types';
+import type { NetworkKind, NetworkOption, PublicGame, Visibility } from '../ipc-types';
 import './BootScreen.css';
 import './NetworkScreen.css';
 
@@ -31,6 +31,9 @@ export default function NetworkScreen() {
     const [code,     setCode]     = useState('');
     const [joining,  setJoining]  = useState(false);
     const [error,    setError]    = useState<string | null>(null);
+    const [games,    setGames]    = useState<PublicGame[]>([]);
+    const [browsing, setBrowsing] = useState(false);
+    const [browseError, setBrowseError] = useState<string | null>(null);
 
     const api = () => (window as any).chessDemocracy;
 
@@ -39,10 +42,22 @@ export default function NetworkScreen() {
         api()?.getNetworkOptions().then((res: any) => { if (res.ok) setOptions(res.value); });
     }, []);
 
-    async function join(kind: NetworkKind, room?: string) {
+    async function refresh() {
+        setBrowsing(true);
+        setBrowseError(null);
+        const found = await browsePublicGames();
+        setGames(found.games);
+        setBrowseError(found.error);
+        setBrowsing(false);
+    }
+
+    // Look for public games as soon as the internet step opens.
+    useEffect(() => { if (roomFor) refresh(); }, [roomFor]);
+
+    async function join(kind: NetworkKind, room?: string, visibility?: Visibility) {
         setError(null);
         setJoining(true);
-        const problem = await joinNetwork(kind, room);
+        const problem = await joinNetwork(kind, room, visibility);
         if (problem) {
             setError(problem);
             setJoining(false);
@@ -96,52 +111,94 @@ export default function NetworkScreen() {
             )}
 
             {roomFor && (
-                <div className="boot-card">
-                    <h2>Play over the internet</h2>
-                    <p className="boot-sub">
-                        Start a game and send the code to your friends,<br />
-                        or enter the code someone sent you.
-                    </p>
-
-                    <div className="room-options">
-                        <button
-                            className="enter-btn room-create"
-                            onClick={() => join(roomFor, newRoomCode())}
-                            disabled={joining}
-                        >
-                            {joining && !typed ? <span className="btn-spinner" /> : 'Create a game'}
+                <div className="boot-card room-card">
+                    <div className="room-card-head">
+                        <button className="change-network-btn" onClick={() => { setRoomFor(null); setError(null); }} disabled={joining}>
+                            ← Back
                         </button>
-
-                        <div className="room-divider">or</div>
-
-                        <form
-                            className="room-join"
-                            onSubmit={e => { e.preventDefault(); if (typed) join(roomFor, typed); }}
-                        >
-                            <label className="room-label" htmlFor="room-code">Room code</label>
-                            <div className="room-join-row">
-                                <input
-                                    id="room-code"
-                                    className="room-input"
-                                    value={code}
-                                    onChange={e => setCode(e.target.value)}
-                                    placeholder="k7mq-x2pd"
-                                    autoComplete="off"
-                                    spellCheck={false}
-                                    disabled={joining}
-                                />
-                                <button className="back-btn" type="submit" disabled={!typed || joining}>
-                                    {joining && typed ? <span className="btn-spinner" /> : 'Join'}
-                                </button>
-                            </div>
-                        </form>
+                        <h2>Play over the internet</h2>
                     </div>
 
-                    {error && <p className="boot-error">⚠ {error}</p>}
+                    <div className="room-columns">
+                        <section className="room-public" aria-labelledby="public-games-title">
+                            <div className="room-section-head">
+                                <h3 id="public-games-title">Public games</h3>
+                                <button className="change-network-btn" onClick={refresh} disabled={browsing || joining}>
+                                    {browsing ? 'Looking…' : 'Refresh'}
+                                </button>
+                            </div>
 
-                    <button className="change-network-btn" onClick={() => { setRoomFor(null); setError(null); }} disabled={joining}>
-                        ← Back
-                    </button>
+                            <ul className="public-list" aria-busy={browsing}>
+                                {games.length === 0 && (
+                                    <li className="public-empty">
+                                        {browsing
+                                            ? 'Looking for games…'
+                                            : <>No public games right now.<br />Start one and it shows up here for everyone.</>}
+                                    </li>
+                                )}
+                                {games.map(game => (
+                                    <li key={game.room} className="public-game">
+                                        <div className="public-game-info">
+                                            <span className="public-game-players">
+                                                {game.players} {game.players === 1 ? 'player' : 'players'}
+                                            </span>
+                                            <span className="public-game-sides">
+                                                <span className="side-dot side-dot--white" />{game.whites}
+                                                <span className="side-dot side-dot--black" />{game.blacks}
+                                            </span>
+                                        </div>
+                                        <code className="public-game-room">{game.room}</code>
+                                        <button
+                                            className="public-game-join"
+                                            onClick={() => join(roomFor, game.room, 'public')}
+                                            disabled={joining}
+                                        >
+                                            Join
+                                        </button>
+                                    </li>
+                                ))}
+                            </ul>
+                            {browseError && <p className="boot-error">⚠ {browseError}</p>}
+                        </section>
+
+                        <section className="room-side">
+                            <div className="room-block">
+                                <h3>Start a game</h3>
+                                <div className="room-start">
+                                    <button className="enter-btn" onClick={() => join(roomFor, newRoomCode(), 'public')} disabled={joining}>
+                                        Public
+                                    </button>
+                                    <button className="back-btn" onClick={() => join(roomFor, newRoomCode(), 'private')} disabled={joining}>
+                                        Private
+                                    </button>
+                                </div>
+                                <p className="room-hint">Public games are listed for anyone. Private ones need the code.</p>
+                            </div>
+
+                            <form
+                                className="room-block"
+                                onSubmit={e => { e.preventDefault(); if (typed) join(roomFor, typed, 'private'); }}
+                            >
+                                <label htmlFor="room-code"><h3>Join with a code</h3></label>
+                                <div className="room-join-row">
+                                    <input
+                                        id="room-code"
+                                        className="room-input"
+                                        value={code}
+                                        onChange={e => setCode(e.target.value)}
+                                        placeholder="k7mq-x2pd"
+                                        autoComplete="off"
+                                        spellCheck={false}
+                                        disabled={joining}
+                                    />
+                                    <button className="back-btn" type="submit" disabled={!typed || joining}>Join</button>
+                                </div>
+                            </form>
+                        </section>
+                    </div>
+
+                    {joining && <p className="room-hint room-connecting"><span className="btn-spinner" /> Connecting…</p>}
+                    {error && <p className="boot-error">⚠ {error}</p>}
                 </div>
             )}
 

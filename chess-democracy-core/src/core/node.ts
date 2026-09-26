@@ -1,5 +1,5 @@
 import { LocalNetworkController }  from "../network/localnetwork/local-network-controller.js";
-import type { GameNetwork, NetworkFactory } from "../network/game-network.js";
+import type { GameNetwork, NetworkFactory, GameSummary } from "../network/game-network.js";
 import { Peer, PeerStatus }         from "../network/peer.js";
 import { loadOrCreateIdentity }    from "../protocol/identity-store.js";
 import { getOrCreateIdentity }     from "../protocol/generateidentity.js";
@@ -458,6 +458,7 @@ export class Node extends EventEmitter {
             getAlivePeersCount:    () => this.totalAlivePeersCount,
             adjustAlivePeersCount: (sign, amount) => this.adjustAlivePeersCount(sign, amount),
             acceptingConnection:   (peerKey) => this.acceptsConnection(peerKey),
+            summary:               () => this.summary(),
         }, port).then(({ network, boundPort }) => {
             if (this.stopped) {   // stop() ran while the transport was starting
                 network.stop();
@@ -1098,6 +1099,18 @@ export class Node extends EventEmitter {
         for (const [key, peer] of this.allPeers) {
             if (peer.team === 'white' || peer.team === 'black') this.roster.set(key, peer.team);
         }
+    }
+
+    /** Players and sides as this node sees them, and whether others can still join. */
+    private summary(): GameSummary {
+        const teams = [this.game.myTeam, ...[...this.allPeers.values()].map(p => p.team)];
+        const phase = this.game.phase;
+        return {
+            open:    phase === 'waiting_for_side' || phase === 'waiting_for_ready' || phase === 'waiting_for_peers',
+            players: teams.length,
+            whites:  teams.filter(t => t === 'white').length,
+            blacks:  teams.filter(t => t === 'black').length,
+        };
     }
 
     /** No key: could anyone connect now? With a key: may this peer connect? */

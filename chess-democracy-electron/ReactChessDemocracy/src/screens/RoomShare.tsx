@@ -1,6 +1,7 @@
 /**
  * The room code, with a button to copy it, for sending to friends. Shown on
- * the side and lobby screens when playing over the internet.
+ * the side and lobby screens when playing over the internet, marked public
+ * (listed for anyone) or private (only reachable with the code).
  */
 
 import { useState } from 'react';
@@ -8,7 +9,8 @@ import { useStore } from '../store';
 import './NetworkScreen.css';
 
 export default function RoomShare() {
-    const room = useStore(s => s.room);
+    const room       = useStore(s => s.room);
+    const visibility = useStore(s => s.visibility);
     const [copied, setCopied] = useState(false);
     if (!room) return null;
 
@@ -22,6 +24,7 @@ export default function RoomShare() {
 
     return (
         <span className="room-share">
+            {visibility && <span className={`room-share-kind room-share-kind--${visibility}`}>{visibility === 'public' ? 'Public' : 'Private'}</span>}
             Room <code>{room}</code>
             <button onClick={copy} title="Copy the room code">{copied ? 'Copied' : 'Copy'}</button>
         </span>

@@ -18,6 +18,8 @@ export interface NetworkOption {
 /** What the player chose alongside the network. */
 export interface NetworkChoice {
     room?: string;
+    /** Public games are listed in the lobby for anyone to join; private ones need the code. */
+    visibility?: 'public' | 'private';
 }
 
 const NETWORKS: Record<NetworkKind, { available: boolean; needsRoom: boolean; make(choice: NetworkChoice): NetworkFactory }> = {
@@ -29,9 +31,10 @@ const NETWORKS: Record<NetworkKind, { available: boolean; needsRoom: boolean; ma
     global: {
         available: true,
         needsRoom: true,
-        make: ({ room }) => {
+        make: (choice) => {
+            const room = choice.room;
             if (!room?.trim()) throw new Error('A room code is needed to play over the internet');
-            return HyperswarmNetwork.create({ room });
+            return HyperswarmNetwork.create({ room, public: choice.visibility === 'public' });
         },
     },
 };

@@ -8,7 +8,7 @@ A peer-to-peer multiplayer chess client built with Electron + React + TypeScript
 
 ## How a game works
 
-Open the app and pick where to play. **Local network**: machines on the same Wi-Fi find each other with no setup. **Over the internet**: one player creates a game and sends the room code, the others join with it. No accounts either way.
+Open the app and pick where to play. **Local network**: machines on the same Wi-Fi find each other with no setup. **Over the internet**: start a public game that anyone can find in the list, or a private one and send friends the room code. No accounts either way.
 
 Pick a side. Any number of players can join the same one. When it is your side's turn a voting window opens (30s by default) and everyone on that side votes for a legal move. The plurality winner is played. A two-way tie breaks deterministically so every node commits the same move; a three-way split with no majority reopens the window.
 
@@ -281,10 +281,10 @@ Diagrams use [Mermaid](https://mermaid.js.org/) and render natively on GitHub.
 - [x] Internet play over [hyperswarm](https://github.com/holepunchto/hyperswarm): UDP with NAT hole-punching, encrypted connections
 - [x] Players find each other by room code on a public DHT, so no signalling server is needed
 - [x] Network choice in the app: local or internet, picked before choosing a side
+- [x] Public games listed for anyone to join; private ones need the code
 
 ### Next
 - [ ] Relay for players behind strict NATs, where hole-punching can't get through
-- [ ] Public lobby to find games without a code
 - [ ] macOS and Linux builds
 
 > Contributions are very welcome — see [Contributing](#contributing) below.
@@ -297,7 +297,9 @@ The internet transport (`network/globalnetwork/`) uses hyperswarm. Each room cod
 
 On top of that runs the same protocol as the LAN. Each side opens with a signed hello naming the hyperswarm key it's addressed to, so a hello can't be passed on to impersonate its author, and after that every message is signed and checked exactly as on a LAN.
 
-Anyone with a room code can join that game, so treat it like a private link. Hole-punching gets through most home routers but not every network; very strict NATs (some offices and mobile carriers) can't connect directly, and there's no relay for them yet.
+A public game is also announced on one shared lobby topic. Someone browsing looks that topic up, connects to each player announcing, reads a short signed listing (room code, player count, sides) and hangs up; joining is then the normal room-code flow. A game stops announcing once it starts. The lobby runs on its own swarm, so visitors never touch the game connection, and listings are only trusted as far as their signature: anyone can announce, so a listing says who posted it, not that the game is any good.
+
+Private games never announce. Anyone with the code can still join, so treat it like a private link. Hole-punching gets through most home routers but not every network; very strict NATs (some offices and mobile carriers) can't connect directly, and there's no relay for them yet.
 
 ## Adding a transport
 
