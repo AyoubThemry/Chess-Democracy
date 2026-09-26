@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { MessageService }   from '../network/localnetwork/message-service.js';
+import { MessageService }   from '../network/message-service.js';
 import { Peer, PeerStatus, PeerData } from '../network/peer.js';
 import { WebSocketConnection } from '../network/peer-connection.js';
 import { getOrCreateIdentity }        from '../protocol/generateidentity.js';

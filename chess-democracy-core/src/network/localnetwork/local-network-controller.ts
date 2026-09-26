@@ -1,7 +1,7 @@
 import { BaseNetworkController }  from "../base-network-controller.js";
 import { PublisherService }       from "./publisher-service.js";
 import { DiscoveryService }       from "./discovery-service.js";
-import { MessageService, MessageCallbacks } from "./message-service.js";
+import { MessageService, MessageCallbacks } from "../message-service.js";
 import { WebsocketService }       from "../websocket-service.js";
 import { PeerData, Peer }         from "../peer.js";
 import { NETWORK_CONFIG }         from "../../utils/config.js";

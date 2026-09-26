@@ -8,6 +8,7 @@ import {
     PUSH,
     ChessDemocracyAPI,
     Team,
+    NetworkKind,
 } from './ipc-channels';
 
 function listen<T>(channel: string, cb: (data: T) => void): () => void {
@@ -78,6 +79,15 @@ const api: ChessDemocracyAPI = {
 
     openIdentityFile: () =>
         ipcRenderer.invoke(INVOKE.IDENTITY_OPEN_FILE),
+
+    getNetworkOptions: () =>
+        ipcRenderer.invoke(INVOKE.NETWORK_GET_OPTIONS),
+
+    connectNetwork: (network: NetworkKind) =>
+        ipcRenderer.invoke(INVOKE.NETWORK_CONNECT, { network }),
+
+    leaveNetwork: () =>
+        ipcRenderer.invoke(INVOKE.NETWORK_LEAVE),
 
     on: {
     peerJoined:         (cb: (data: any) => void) => listen(PUSH.PEER_JOINED,          cb),

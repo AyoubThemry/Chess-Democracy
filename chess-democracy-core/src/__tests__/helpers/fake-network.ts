@@ -5,7 +5,7 @@ import { Node } from '../../core/node.js';
 import { Peer } from '../../network/peer.js';
 import { WebSocketConnection } from '../../network/peer-connection.js';
 import type { GameNetwork } from '../../network/game-network.js';
-import type { MessageCallbacks } from '../../network/localnetwork/message-service.js';
+import type { MessageCallbacks } from '../../network/message-service.js';
 
 // Node builds its MessageCallbacks in boot() and hands them to its network
 // factory. A fake factory captures them, so tests deliver messages exactly as

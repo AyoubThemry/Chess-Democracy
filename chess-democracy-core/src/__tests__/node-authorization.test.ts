@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { Node } from '../core/node.js';
 import { VotingState, type SignedVote } from '../game/voting-state.js';
-import type { MessageCallbacks } from '../network/localnetwork/message-service.js';
+import type { MessageCallbacks } from '../network/message-service.js';
 import { bootNode, addPeer } from './helpers/fake-network.js';
 import { randomUUID } from 'crypto';
 import { getOrCreateIdentity } from '../protocol/generateidentity.js';

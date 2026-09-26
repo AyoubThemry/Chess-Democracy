@@ -1,7 +1,10 @@
 /**
  * App.tsx — Root component
  *
- * Screen routing by phase:
+ * Screen routing:
+ *   not logged in      → LoginScreen
+ *   no network yet     → NetworkScreen   (local or global)
+ * then by phase:
  *   waiting_for_side   → BootScreen
  *   waiting_for_ready  → LobbyScreen
  *   waiting_for_peers  → LobbyScreen
@@ -16,6 +19,7 @@ import { useEffect }                        from 'react';
 import { useChessDemocracy }                     from './useChessDemocracy';
 import { useStore, selPhase, selHydrated }  from './store';
 import LoginScreen                          from './login';
+import NetworkScreen                        from './screens/NetworkScreen';
 import BootScreen                           from './screens/BootScreen';
 import LobbyScreen                          from './screens/LobbyScreen';
 import GameScreen                           from './screens/GameScreen';
@@ -64,13 +68,14 @@ export default function App() {
 
     const hydrated         = useStore(selHydrated);
     const isAuthenticated  = useStore(s => s.isAuthenticated);
+    const network          = useStore(s => s.network);
     const phase            = useStore(selPhase);
 
     return (
         <>
             <NotificationBanner />
 
-            {!hydrated ? <LoadingScreen /> : !isAuthenticated ? <LoginScreen /> : (() => {
+            {!hydrated ? <LoadingScreen /> : !isAuthenticated ? <LoginScreen /> : !network ? <NetworkScreen /> : (() => {
                 switch (phase) {
                     case 'waiting_for_side':
                         return <BootScreen />;

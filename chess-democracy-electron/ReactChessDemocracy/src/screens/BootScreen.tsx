@@ -8,13 +8,16 @@
 
 import { useState } from 'react';
 import { useStore }  from '../store';
+import { leaveNetwork } from '../useChessDemocracy';
 import type { Team } from '../ipc-types';
 import './BootScreen.css';
+import './NetworkScreen.css';
 
 export default function BootScreen() {
     const [loading, setLoading] = useState<Team | null>(null);
     const [error,   setError]   = useState<string | null>(null);
     const applySnapshot = useStore(s => s.applySnapshot);
+    const network       = useStore(s => s.network);
 
     async function choose(team: Team) {
         setError(null);
@@ -44,7 +47,7 @@ export default function BootScreen() {
             <header className="boot-header">
                 <div className="boot-logo">♟</div>
                 <h1>Chess Democracy</h1>
-                <p>Decentralised P2P chess over your local network</p>
+                <p>{network === 'global' ? 'Playing over the internet' : 'Playing on your local network'}</p>
             </header>
 
             <div className="boot-card">
@@ -89,9 +92,13 @@ export default function BootScreen() {
                 )}
             </div>
 
-            <p className="boot-footer">
-                Chess Democracy — peer-to-peer, no server required
-            </p>
+            <button
+                className="change-network-btn"
+                onClick={async () => { const problem = await leaveNetwork(); if (problem) setError(problem); }}
+                disabled={loading !== null}
+            >
+                ← Change network
+            </button>
         </div>
     );
 }

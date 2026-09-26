@@ -3,6 +3,7 @@
 
 import { useEffect, useRef } from 'react';
 import { useStore } from './store';
+import type { NetworkKind } from './ipc-types';
 
 // Check whether we are inside the Electron preload context.
 const ipc = () =>
@@ -24,25 +25,9 @@ export function useChessDemocracy(): void {
             return;
         }
 
-        // 1. Hydrate store from node state
-
-        async function hydrate() {
-            const [idRes, stateRes, peersRes, configRes] = await Promise.all([
-                api.getIdentity(),
-                api.getState(),
-                api.getPeers(),
-                api.getConfig(),
-            ]);
-
-            if (idRes.ok)     store.setIdentity(idRes.value);
-            if (stateRes.ok)  store.applySnapshot(stateRes.value);
-            if (peersRes.ok)  store.setPeers(peersRes.value);
-            if (configRes.ok) store.applyConfigSnapshot(configRes.value);
-
-            store.setHydrated();
-        }
-
-        // 2. Auto-start with remembered identity, or fall through to login screen
+        // 1. Load the remembered identity if there is one. That skips the login
+        //    screen, but not the network screen: networking only starts once
+        //    the player has picked a network.
 
         async function init() {
             const prefsRes = await api.getIdentityPrefs();
@@ -50,19 +35,17 @@ export function useChessDemocracy(): void {
                 const startRes = await api.startNode(prefsRes.value.identityPath);
                 if (startRes.ok) {
                     store.setAuthenticated(true);
-                    await hydrate();
-                    return;
+                } else {
+                    // Saved PEM is gone / corrupt — fall through to login screen
+                    console.warn('[useChessDemocracy] saved identity failed to load — showing login');
                 }
-                // Saved PEM is gone / corrupt — fall through to login screen
-                console.warn('[useChessDemocracy] saved identity failed to load — showing login');
             }
-            // Not remembered or failed — show the login screen
             store.setHydrated();   // mark hydrated so App doesn't show spinner
         }
 
         init().catch(console.error);
 
-        // 3. PUSH subscriptions
+        // 2. PUSH subscriptions
 
         const unsubPeerJoined = api.on.peerJoined((data: any) => {
             store.upsertPeer({
@@ -238,4 +221,42 @@ export function useChessDemocracy(): void {
 
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []); // mount once only — store actions are stable references
+}
+
+// ── Joining and leaving a network ─────────────────────────────────────────────
+
+/** Pulls the node's current state into the store. Call after connecting. */
+export async function hydrateFromNode(): Promise<void> {
+    const api   = ipc();
+    const store = useStore.getState();
+    const [idRes, stateRes, peersRes, configRes] = await Promise.all([
+        api.getIdentity(),
+        api.getState(),
+        api.getPeers(),
+        api.getConfig(),
+    ]);
+    if (idRes.ok)     store.setIdentity(idRes.value);
+    if (stateRes.ok)  store.applySnapshot(stateRes.value);
+    if (peersRes.ok)  store.setPeers(peersRes.value);
+    if (configRes.ok) store.applyConfigSnapshot(configRes.value);
+}
+
+/** Starts networking on `network`. Returns an error message, or null on success. */
+export async function joinNetwork(network: NetworkKind): Promise<string | null> {
+    const res = await ipc().connectNetwork(network);
+    if (!res.ok) return res.error;
+    await hydrateFromNode();
+    useStore.getState().setNetwork(network);
+    return null;
+}
+
+/** Back to the network screen. Only works before Ready. */
+export async function leaveNetwork(): Promise<string | null> {
+    const res = await ipc().leaveNetwork();
+    if (!res.ok) return res.error;
+    const store = useStore.getState();
+    store.resetGame();
+    store.setPeers([]);
+    store.setNetwork(null);
+    return null;
 }

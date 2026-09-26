@@ -10,6 +10,7 @@ import type {
     PeerSummary,
     RecordedMove,
     ConfigSnapshot,
+    NetworkKind,
 } from './ipc-types';
 
 
@@ -89,6 +90,8 @@ export interface ChessDemocracyStore {
     isAuthenticated: boolean;
 
     identity:     NodeIdentity | null;
+    /** Which network we're playing on. null until the player picks one after login. */
+    network:      NetworkKind | null;
     peers:        PeerSummary[];
     game:         GameState;
     config:       ConfigState;
@@ -106,6 +109,9 @@ export interface ChessDemocracyStore {
 
     /** Set or update the local node identity. */
     setIdentity(identity: NodeIdentity): void;
+
+    /** The network picked on the network screen, or null to go back to it. */
+    setNetwork(network: NetworkKind | null): void;
 
     /** Replace the full peer list. */
     setPeers(peers: PeerSummary[]): void;
@@ -228,6 +234,7 @@ export const useStore = create<ChessDemocracyStore>((set) => ({
     hydrated:        false,
     isAuthenticated: false,
     identity:        null,
+    network:      null,
     peers:        [],
     game:         { ...defaultGame },
     config:       { ...defaultConfig },
@@ -244,6 +251,10 @@ export const useStore = create<ChessDemocracyStore>((set) => ({
     // Identity
 
     setIdentity: (identity) => set({ identity }),
+
+    // Network
+
+    setNetwork: (network) => set({ network }),
 
     // Peers
 

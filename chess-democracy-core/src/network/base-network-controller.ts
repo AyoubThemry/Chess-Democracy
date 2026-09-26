@@ -2,7 +2,7 @@ import { EventEmitter }        from 'events';
 import { INetworkController }  from "./i-network-controller-interface.js";
 import { WebsocketService }    from "./websocket-service.js";
 import { ConnectorService }    from "./localnetwork/connector-service.js";
-import { MessageService, MessageCallbacks, NonceStore } from "./localnetwork/message-service.js";
+import { MessageService, MessageCallbacks, NonceStore } from "./message-service.js";
 import { PeerData, Peer, PeerStatus } from "./peer.js";
 import { WebSocketConnection } from "./peer-connection.js";
 import { verifySignature }     from "../protocol/verifysignsignature.js";

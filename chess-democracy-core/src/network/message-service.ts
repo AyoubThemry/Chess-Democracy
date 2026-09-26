@@ -1,12 +1,12 @@
-import { Peer, PeerStatus }        from "../peer.js";
-import { signMessage, verifySignature } from "../../protocol/verifysignsignature.js";
+import { Peer, PeerStatus }        from "./peer.js";
+import { signMessage, verifySignature } from "../protocol/verifysignsignature.js";
 import { randomUUID }              from "crypto";
-import { NETWORK_CONFIG }          from "../../utils/config.js";
-import { logger }                  from "../../utils/logger.js";
-import type { Team, GameResult }   from "../../game/game-state.js";
-import type { GameConfig, SignedVote } from "../../game/voting-state.js";
-import type { TallyClaim }         from "../../game/verify-tally.js";
-import type { GameSnapshot }       from "../../game/snapshot.js";
+import { NETWORK_CONFIG }          from "../utils/config.js";
+import { logger }                  from "../utils/logger.js";
+import type { Team, GameResult }   from "../game/game-state.js";
+import type { GameConfig, SignedVote } from "../game/voting-state.js";
+import type { TallyClaim }         from "../game/verify-tally.js";
+import type { GameSnapshot }       from "../game/snapshot.js";
 // Node is intentionally NOT imported here.
 // The time-offset callback is injected at call time to avoid a circular
 // dependency: Node → LocalNetworkController → MessageService → Node.

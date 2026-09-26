@@ -5,7 +5,7 @@ import { Node } from '../core/node.js';
 import { VotingState, type SignedVote } from '../game/voting-state.js';
 import type { GameSnapshot } from '../game/snapshot.js';
 import type { GameNetwork } from '../network/game-network.js';
-import type { MessageCallbacks } from '../network/localnetwork/message-service.js';
+import type { MessageCallbacks } from '../network/message-service.js';
 import { WebSocketConnection } from '../network/peer-connection.js';
 import { PeerStatus } from '../network/peer.js';
 import { getOrCreateIdentity } from '../protocol/generateidentity.js';
