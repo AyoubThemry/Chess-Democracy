@@ -3,10 +3,10 @@ import { networkOptions, networkFactory } from '../network/networks.js';
 import { LocalNetworkController } from '../network/localnetwork/local-network-controller.js';
 
 describe('network registry', () => {
-    it('offers local now and lists global as not available yet', () => {
+    it('offers both, and says which one needs a room code', () => {
         expect(networkOptions()).toEqual([
-            { kind: 'local',  available: true  },
-            { kind: 'global', available: false },
+            { kind: 'local',  available: true, needsRoom: false },
+            { kind: 'global', available: true, needsRoom: true  },
         ]);
     });
 
@@ -14,8 +14,13 @@ describe('network registry', () => {
         expect(networkFactory('local')).toBe(LocalNetworkController.create);
     });
 
-    it('refuses a network that is not available, or does not exist', () => {
-        expect(() => networkFactory('global')).toThrow(/not available yet/);
+    it('needs a room code for global', () => {
+        expect(() => networkFactory('global')).toThrow(/room code/);
+        expect(() => networkFactory('global', { room: '   ' })).toThrow(/room code/);
+        expect(typeof networkFactory('global', { room: 'abcd-2345' })).toBe('function');
+    });
+
+    it('refuses a network that does not exist', () => {
         expect(() => networkFactory('bluetooth')).toThrow(/Unknown network/);
     });
 });

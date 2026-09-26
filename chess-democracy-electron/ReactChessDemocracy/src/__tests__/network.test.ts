@@ -33,7 +33,7 @@ describe('choosing a network', () => {
         const api = fakeBridge();
         expect(await joinNetwork('local')).toBeNull();
 
-        expect(api.connectNetwork).toHaveBeenCalledWith('local');
+        expect(api.connectNetwork).toHaveBeenCalledWith('local', undefined);   // no room on a LAN
         const s = useStore.getState();
         expect(s.network).toBe('local');
         expect(s.identity?.publicKey).toBe('abc123');
@@ -62,5 +62,25 @@ describe('choosing a network', () => {
         await joinNetwork('local');
         expect(await leaveNetwork()).toBe('in_game:waiting_for_peers');
         expect(useStore.getState().network).toBe('local');
+    });
+});
+
+describe('playing over the internet', () => {
+    beforeEach(() => {
+        useStore.setState({ network: null, room: null, identity: null, peers: [] });
+    });
+
+    it('passes the room code along and keeps it for sharing', async () => {
+        const api = fakeBridge();
+        expect(await joinNetwork('global', 'k7mq-x2pd')).toBeNull();
+        expect(api.connectNetwork).toHaveBeenCalledWith('global', 'k7mq-x2pd');
+        expect(useStore.getState().room).toBe('k7mq-x2pd');
+    });
+
+    it('forgets the room code when leaving', async () => {
+        fakeBridge();
+        await joinNetwork('global', 'k7mq-x2pd');
+        await leaveNetwork();
+        expect(useStore.getState().room).toBeNull();
     });
 });

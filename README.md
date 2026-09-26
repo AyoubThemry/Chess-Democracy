@@ -4,11 +4,11 @@
 
 # Chess Democracy
 
-A peer-to-peer multiplayer chess client built with Electron + React + TypeScript. Players connect directly over LAN/Wi-Fi using mDNS discovery — no server required. Multiple players can join the same side and vote on moves collectively. The project strives for a global working Peer 2 Peer version.
+A peer-to-peer multiplayer chess client built with Electron + React + TypeScript. Play on your local network, or over the internet with a room code. Either way there's no game server: players connect to each other directly. Multiple players can join the same side and vote on moves collectively.
 
 ## How a game works
 
-Open the app on two or more machines on the same network. They find each other over mDNS with no configuration, no lobby server, and no accounts.
+Open the app and pick where to play. **Local network**: machines on the same Wi-Fi find each other with no setup. **Over the internet**: one player creates a game and sends the room code, the others join with it. No accounts either way.
 
 Pick a side. Any number of players can join the same one. When it is your side's turn a voting window opens (30s by default) and everyone on that side votes for a legal move. The plurality winner is played. A two-way tie breaks deterministically so every node commits the same move; a three-way split with no majority reopens the window.
 
@@ -267,24 +267,37 @@ Diagrams use [Mermaid](https://mermaid.js.org/) and render natively on GitHub.
 
 ## Roadmap
 
-### Phase 1 — LAN / Wi-Fi ✅ (current)
+### Phase 1 — LAN / Wi-Fi ✅
 - [x] mDNS peer discovery (no server required)
 - [x] Multi-player voting per side with configurable window
 - [x] Resign vote protocol with threshold and disconnect handling
 - [x] Draw offer / accept flow
 - [x] Config handshake in lobby (vote window, revotes, resign settings)
 - [x] Ed25519 identity with signed messages
+- [x] Master counts the votes, everyone else verifies the count
+- [x] Reconnect and catch up after a dropped connection
 
-### Phase 2 — Global P2P (upcoming)
-- [ ] Switch transport from TCP WebSockets to UDP (`dgram`)
-- [ ] UDP hole-punching for NAT traversal (internet play)
-- [ ] Minimal signalling server to broker peer IP/port exchange
-- [ ] Relay fallback for symmetric NAT environments
-- [ ] Optional matchmaking lobby (public game codes)
+### Phase 2 — Global P2P ✅
+- [x] Internet play over [hyperswarm](https://github.com/holepunchto/hyperswarm): UDP with NAT hole-punching, encrypted connections
+- [x] Players find each other by room code on a public DHT, so no signalling server is needed
+- [x] Network choice in the app: local or internet, picked before choosing a side
 
-> Contributions toward Phase 2 are very welcome — see [Contributing](#contributing) below.
+### Next
+- [ ] Relay for players behind strict NATs, where hole-punching can't get through
+- [ ] Public lobby to find games without a code
+- [ ] macOS and Linux builds
+
+> Contributions are very welcome — see [Contributing](#contributing) below.
 
 ---
+
+## Playing over the internet
+
+The internet transport (`network/globalnetwork/`) uses hyperswarm. Each room code is hashed into a topic on hyperswarm's public DHT; players who join the same topic find each other, hyperswarm punches through their NATs, and every connection is end-to-end encrypted.
+
+On top of that runs the same protocol as the LAN. Each side opens with a signed hello naming the hyperswarm key it's addressed to, so a hello can't be passed on to impersonate its author, and after that every message is signed and checked exactly as on a LAN.
+
+Anyone with a room code can join that game, so treat it like a private link. Hole-punching gets through most home routers but not every network; very strict NATs (some offices and mobile carriers) can't connect directly, and there's no relay for them yet.
 
 ## Adding a transport
 

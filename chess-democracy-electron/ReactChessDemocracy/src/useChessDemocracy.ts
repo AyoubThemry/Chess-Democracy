@@ -241,12 +241,15 @@ export async function hydrateFromNode(): Promise<void> {
     if (configRes.ok) store.applyConfigSnapshot(configRes.value);
 }
 
-/** Starts networking on `network`. Returns an error message, or null on success. */
-export async function joinNetwork(network: NetworkKind): Promise<string | null> {
-    const res = await ipc().connectNetwork(network);
+/**
+ * Starts networking on `network`; `room` is the shared code for playing over
+ * the internet. Returns an error message, or null on success.
+ */
+export async function joinNetwork(network: NetworkKind, room?: string): Promise<string | null> {
+    const res = await ipc().connectNetwork(network, room);
     if (!res.ok) return res.error;
     await hydrateFromNode();
-    useStore.getState().setNetwork(network);
+    useStore.getState().setNetwork(network, room ?? null);
     return null;
 }
 

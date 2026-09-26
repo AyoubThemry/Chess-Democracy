@@ -36,3 +36,73 @@
 .change-network-btn:hover:not(:disabled),
 .change-network-btn:focus-visible { opacity: 1; text-decoration: underline; }
 .change-network-btn:disabled      { cursor: not-allowed; }
+
+/* ── Room step (playing over the internet) ─────────────────────────────── */
+
+.room-options {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    width: 100%;
+}
+
+.room-create { flex: none; width: 100%; }
+
+.room-divider {
+    color: var(--text-dim);
+    font-size: 0.8rem;
+    text-align: center;
+    opacity: 0.6;
+}
+
+.room-join     { display: flex; flex-direction: column; gap: 0.4rem; }
+.room-label    { color: var(--text-dim); font-size: 0.8rem; }
+.room-join-row { display: flex; gap: 0.5rem; }
+
+.room-input {
+    flex: 1;
+    min-width: 0;
+    padding: 0.65rem 0.9rem;
+    border-radius: 10px;
+    border: 1px solid var(--border);
+    background: var(--surface-alt);
+    color: var(--text);
+    font-family: ui-monospace, 'Cascadia Mono', Consolas, monospace;
+    font-size: 1rem;
+    letter-spacing: 0.08em;
+}
+
+.room-input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+/* ── Share chip: the room code on the side and lobby screens ───────────── */
+
+.room-share {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.3rem 0.4rem 0.3rem 0.75rem;
+    border-radius: 999px;
+    border: 1px solid #3a3660;
+    background: #1a1830;
+    font-size: 0.8rem;
+    color: var(--text-dim);
+}
+
+.room-share code {
+    color: var(--text);
+    font-family: ui-monospace, 'Cascadia Mono', Consolas, monospace;
+    letter-spacing: 0.08em;
+}
+
+.room-share button {
+    border: none;
+    border-radius: 999px;
+    padding: 0.2rem 0.65rem;
+    background: var(--accent);
+    color: #000;
+    font-size: 0.75rem;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.room-share button:focus-visible { outline: 2px solid var(--text); outline-offset: 2px; }
