@@ -309,14 +309,14 @@ async function loadIdentity(requestedPath?: string): Promise<{ publicKey: string
     return { publicKey, identityPath: resolvedPath };
 }
 
-async function connectNetwork(kind: string): Promise<void> {
+async function connectNetwork(kind: string, room?: string): Promise<void> {
     if (!identityPath) throw new Error('no_identity');
 
     const [{ Node }, { networkFactory }] = await Promise.all([
         coreModule<{ Node: new (identityPath?: string, createNetwork?: unknown) => NodeInterface }>('core/node.js'),
-        coreModule<{ networkFactory(kind: string): unknown }>('network/networks.js'),
+        coreModule<{ networkFactory(kind: string, choice?: { room?: string }): unknown }>('network/networks.js'),
     ]);
-    const factory = networkFactory(kind);   // throws for one that isn't available
+    const factory = networkFactory(kind, { room });   // throws if unavailable, or global without a room
 
     stopNode();                             // switching: drop the old network first
     node = new Node(identityPath, factory);
@@ -385,9 +385,9 @@ function registerIdentityHandlers(): void {
         return ok(networkOptions());
     });
 
-    ipcMain.handle(INVOKE.NETWORK_CONNECT, async (_e: IpcMainInvokeEvent, payload: { network: string }) => {
+    ipcMain.handle(INVOKE.NETWORK_CONNECT, async (_e: IpcMainInvokeEvent, payload: { network: string; room?: string }) => {
         try {
-            await connectNetwork(payload?.network);
+            await connectNetwork(payload?.network, payload?.room);
             return ok({ network: payload.network });
         } catch (err: any) {
             return fail(err?.message ?? 'failed_to_connect');

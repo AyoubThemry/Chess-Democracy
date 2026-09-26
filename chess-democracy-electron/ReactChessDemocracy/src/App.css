@@ -5,6 +5,7 @@
 :root {
     --bg:        #0f1117;
     --surface:   #1a1d27;
+    --surface-alt:#22263a;   /* raised surface: inputs, button hover */
     --border:    #2a2d3a;
     --accent:    #7c6af7;
     --accent-dim:#4b3fc7;

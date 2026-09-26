@@ -179,7 +179,8 @@ export interface InvokeMap {
         result:  IpcResult<NetworkOption[]>;
     };
     [INVOKE.NETWORK_CONNECT]: {
-        payload: { network: NetworkKind };
+        /** `room` is the code players share; the global network needs one. */
+        payload: { network: NetworkKind; room?: string };
         result:  IpcResult<{ network: NetworkKind }>;
     };
     [INVOKE.NETWORK_LEAVE]: {
@@ -193,6 +194,8 @@ export type NetworkKind = 'local' | 'global';
 export interface NetworkOption {
     kind:      NetworkKind;
     available: boolean;
+    /** Players find each other with a shared room code. */
+    needsRoom: boolean;
 }
 
 export interface ConfigSnapshot {
@@ -367,7 +370,7 @@ export interface ChessDemocracyAPI {
     openIdentityFile(): Promise<InvokeMap[typeof INVOKE.IDENTITY_OPEN_FILE]['result']>;
 
     getNetworkOptions(): Promise<InvokeMap[typeof INVOKE.NETWORK_GET_OPTIONS]['result']>;
-    connectNetwork(network: NetworkKind): Promise<InvokeMap[typeof INVOKE.NETWORK_CONNECT]['result']>;
+    connectNetwork(network: NetworkKind, room?: string): Promise<InvokeMap[typeof INVOKE.NETWORK_CONNECT]['result']>;
     /** Back to the network screen. Only before Ready; a running game stays on its network. */
     leaveNetwork():      Promise<InvokeMap[typeof INVOKE.NETWORK_LEAVE]['result']>;
     offerDraw():        Promise<InvokeMap[typeof INVOKE.GAME_OFFER_DRAW]['result']>;

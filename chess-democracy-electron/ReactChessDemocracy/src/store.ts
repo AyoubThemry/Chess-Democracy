@@ -92,6 +92,8 @@ export interface ChessDemocracyStore {
     identity:     NodeIdentity | null;
     /** Which network we're playing on. null until the player picks one after login. */
     network:      NetworkKind | null;
+    /** The room code when playing over the internet, so it can be shared. */
+    room:         string | null;
     peers:        PeerSummary[];
     game:         GameState;
     config:       ConfigState;
@@ -110,8 +112,8 @@ export interface ChessDemocracyStore {
     /** Set or update the local node identity. */
     setIdentity(identity: NodeIdentity): void;
 
-    /** The network picked on the network screen, or null to go back to it. */
-    setNetwork(network: NetworkKind | null): void;
+    /** The network picked on the network screen (and its room code), or null to go back to it. */
+    setNetwork(network: NetworkKind | null, room?: string | null): void;
 
     /** Replace the full peer list. */
     setPeers(peers: PeerSummary[]): void;
@@ -235,6 +237,7 @@ export const useStore = create<ChessDemocracyStore>((set) => ({
     isAuthenticated: false,
     identity:        null,
     network:      null,
+    room:         null,
     peers:        [],
     game:         { ...defaultGame },
     config:       { ...defaultConfig },
@@ -254,7 +257,7 @@ export const useStore = create<ChessDemocracyStore>((set) => ({
 
     // Network
 
-    setNetwork: (network) => set({ network }),
+    setNetwork: (network, room = null) => set({ network, room: network ? room : null }),
 
     // Peers
 

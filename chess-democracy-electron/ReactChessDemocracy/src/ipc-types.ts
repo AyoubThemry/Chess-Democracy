@@ -81,4 +81,6 @@ export type NetworkKind = 'local' | 'global';
 export interface NetworkOption {
     kind:      NetworkKind;
     available: boolean;
+    /** Players find each other with a shared room code. */
+    needsRoom: boolean;
 }

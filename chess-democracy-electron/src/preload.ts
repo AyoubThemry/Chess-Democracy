@@ -83,8 +83,8 @@ const api: ChessDemocracyAPI = {
     getNetworkOptions: () =>
         ipcRenderer.invoke(INVOKE.NETWORK_GET_OPTIONS),
 
-    connectNetwork: (network: NetworkKind) =>
-        ipcRenderer.invoke(INVOKE.NETWORK_CONNECT, { network }),
+    connectNetwork: (network: NetworkKind, room?: string) =>
+        ipcRenderer.invoke(INVOKE.NETWORK_CONNECT, { network, room }),
 
     leaveNetwork: () =>
         ipcRenderer.invoke(INVOKE.NETWORK_LEAVE),

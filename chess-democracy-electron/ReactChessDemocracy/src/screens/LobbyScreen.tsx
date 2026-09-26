@@ -3,6 +3,7 @@ import { useState }  from 'react';
 import { useStore }  from '../store';
 import type { Team, PeerSummary } from '../ipc-types';
 import { leaveNetwork } from '../useChessDemocracy';
+import RoomShare from './RoomShare';
 import './LobbyScreen.css';
 import './NetworkScreen.css';
 
@@ -210,6 +211,7 @@ export default function LobbyScreen() {
                         {identity?.publicKey.slice(0, 12)}…
                     </span>
                     <TeamBadge team={myTeam} />
+                    <RoomShare />
                     <button
                         className="change-network-btn"
                         // After Ready you're committed to this game on this network.
