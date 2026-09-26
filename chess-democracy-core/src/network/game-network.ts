@@ -53,6 +53,16 @@ export interface NetworkContext {
     adjustAlivePeersCount: (sign: '+' | '-', amount: number) => void;
     /** No key: could anyone connect right now? With a key: may this peer? */
     acceptingConnection:   (peerKey?: string) => boolean;
+    /** Where the game stands, for a public listing. */
+    summary:               () => GameSummary;
+}
+
+export interface GameSummary {
+    /** Still in the lobby, so others can join. */
+    open:    boolean;
+    players: number;
+    whites:  number;
+    blacks:  number;
 }
 
 /**

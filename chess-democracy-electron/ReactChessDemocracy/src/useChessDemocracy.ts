@@ -3,7 +3,7 @@
 
 import { useEffect, useRef } from 'react';
 import { useStore } from './store';
-import type { NetworkKind } from './ipc-types';
+import type { NetworkKind, Visibility, PublicGame } from './ipc-types';
 
 // Check whether we are inside the Electron preload context.
 const ipc = () =>
@@ -243,14 +243,21 @@ export async function hydrateFromNode(): Promise<void> {
 
 /**
  * Starts networking on `network`; `room` is the shared code for playing over
- * the internet. Returns an error message, or null on success.
+ * the internet, and a public game is listed in the lobby. Returns an error
+ * message, or null on success.
  */
-export async function joinNetwork(network: NetworkKind, room?: string): Promise<string | null> {
-    const res = await ipc().connectNetwork(network, room);
+export async function joinNetwork(network: NetworkKind, room?: string, visibility?: Visibility): Promise<string | null> {
+    const res = await ipc().connectNetwork(network, room, visibility);
     if (!res.ok) return res.error;
     await hydrateFromNode();
-    useStore.getState().setNetwork(network, room ?? null);
+    useStore.getState().setNetwork(network, room ?? null, visibility ?? null);
     return null;
+}
+
+/** The public games open to join right now. Takes a few seconds: it looks them up on the internet. */
+export async function browsePublicGames(): Promise<{ games: PublicGame[]; error: string | null }> {
+    const res = await ipc().browsePublicGames();
+    return res.ok ? { games: res.value, error: null } : { games: [], error: res.error };
 }
 
 /** Back to the network screen. Only works before Ready. */

@@ -35,6 +35,7 @@ function makeNode(room = 'test-room') {
     const net      = new HyperswarmNetwork({
         identity, callbacks: cb, getAllPeers: () => peers,
         getAlivePeersCount: () => peers.size, adjustAlivePeersCount: () => {}, acceptingConnection: () => true,
+        summary: () => ({ open: true, players: peers.size + 1, whites: 0, blacks: 0 }),
     }, { room });
     const connected: Peer[] = [], disconnected: Peer[] = [];
     net.on('peer:connected',    (p: Peer) => { connected.push(p); peers.set(p.peerPublicNodeId, p); });

@@ -84,3 +84,15 @@ export interface NetworkOption {
     /** Players find each other with a shared room code. */
     needsRoom: boolean;
 }
+
+export type Visibility = 'public' | 'private';
+
+/** A public game open to join, as listed in the internet lobby. */
+export interface PublicGame {
+    room:      string;
+    hostKey:   string;
+    players:   number;
+    whites:    number;
+    blacks:    number;
+    updatedAt: number;
+}

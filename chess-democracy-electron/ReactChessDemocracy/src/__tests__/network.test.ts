@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { useStore } from '../store';
-import { joinNetwork, leaveNetwork } from '../useChessDemocracy';
+import { joinNetwork, leaveNetwork, browsePublicGames } from '../useChessDemocracy';
 
 const ok = <T,>(value: T) => Promise.resolve({ ok: true, value });
 
@@ -33,7 +33,7 @@ describe('choosing a network', () => {
         const api = fakeBridge();
         expect(await joinNetwork('local')).toBeNull();
 
-        expect(api.connectNetwork).toHaveBeenCalledWith('local', undefined);   // no room on a LAN
+        expect(api.connectNetwork).toHaveBeenCalledWith('local', undefined, undefined);   // no room on a LAN
         const s = useStore.getState();
         expect(s.network).toBe('local');
         expect(s.identity?.publicKey).toBe('abc123');
@@ -67,20 +67,41 @@ describe('choosing a network', () => {
 
 describe('playing over the internet', () => {
     beforeEach(() => {
-        useStore.setState({ network: null, room: null, identity: null, peers: [] });
+        useStore.setState({ network: null, room: null, visibility: null, identity: null, peers: [] });
     });
 
     it('passes the room code along and keeps it for sharing', async () => {
         const api = fakeBridge();
         expect(await joinNetwork('global', 'k7mq-x2pd')).toBeNull();
-        expect(api.connectNetwork).toHaveBeenCalledWith('global', 'k7mq-x2pd');
+        expect(api.connectNetwork).toHaveBeenCalledWith('global', 'k7mq-x2pd', undefined);
         expect(useStore.getState().room).toBe('k7mq-x2pd');
+    });
+
+    it('says whether the game is public or private', async () => {
+        const api = fakeBridge();
+        await joinNetwork('global', 'k7mq-x2pd', 'public');
+        expect(api.connectNetwork).toHaveBeenCalledWith('global', 'k7mq-x2pd', 'public');
+        expect(useStore.getState().visibility).toBe('public');
     });
 
     it('forgets the room code when leaving', async () => {
         fakeBridge();
-        await joinNetwork('global', 'k7mq-x2pd');
+        await joinNetwork('global', 'k7mq-x2pd', 'private');
         await leaveNetwork();
-        expect(useStore.getState().room).toBeNull();
+        expect(useStore.getState()).toMatchObject({ room: null, visibility: null });
+    });
+});
+
+describe('public games', () => {
+    const listing = { room: 'k7mq-x2pd', hostKey: 'abc', players: 2, whites: 1, blacks: 1, updatedAt: 1 };
+
+    it('returns the games found', async () => {
+        fakeBridge({ browsePublicGames: vi.fn(() => ok([listing])) });
+        expect(await browsePublicGames()).toEqual({ games: [listing], error: null });
+    });
+
+    it('returns no games and the reason when looking fails', async () => {
+        fakeBridge({ browsePublicGames: vi.fn(() => Promise.resolve({ ok: false, error: 'offline' })) });
+        expect(await browsePublicGames()).toEqual({ games: [], error: 'offline' });
     });
 });

@@ -39,24 +39,150 @@
 
 /* ── Room step (playing over the internet) ─────────────────────────────── */
 
-.room-options {
+.room-card {
+    max-width: 760px;
+    width: 100%;
+    text-align: left;
+    gap: 1.25rem;
+}
+
+.room-card-head {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+}
+
+.room-card-head h2 { flex: 1; text-align: center; margin-right: 3rem; }
+
+.room-card h3 {
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-dim);
+}
+
+.room-columns {
+    display: grid;
+    grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
+    gap: 1.5rem;
+}
+
+@media (max-width: 700px) {
+    .room-columns { grid-template-columns: minmax(0, 1fr); }
+}
+
+.room-public,
+.room-side,
+.room-block { display: flex; flex-direction: column; gap: 0.6rem; }
+
+.room-side { gap: 1.5rem; }
+
+.room-section-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.public-list {
+    list-style: none;
+    margin: 0;
+    padding: 0.35rem;
     display: flex;
     flex-direction: column;
-    gap: 1rem;
-    width: 100%;
+    gap: 0.35rem;
+    min-height: 11rem;
+    max-height: 17rem;
+    overflow-y: auto;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--bg);
 }
 
-.room-create { flex: none; width: 100%; }
-
-.room-divider {
-    color: var(--text-dim);
-    font-size: 0.8rem;
+.public-empty {
+    margin: auto;
+    padding: 1rem;
     text-align: center;
-    opacity: 0.6;
+    font-size: 0.85rem;
+    line-height: 1.6;
+    color: var(--text-dim);
 }
 
-.room-join     { display: flex; flex-direction: column; gap: 0.4rem; }
-.room-label    { color: var(--text-dim); font-size: 0.8rem; }
+.public-game {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.55rem 0.55rem 0.55rem 0.8rem;
+    border-radius: 9px;
+    background: var(--surface-alt);
+}
+
+.public-game-info {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+}
+
+.public-game-players { font-size: 0.9rem; font-weight: 600; color: var(--text); }
+
+.public-game-sides {
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+    font-size: 0.75rem;
+    color: var(--text-dim);
+    font-variant-numeric: tabular-nums;
+}
+
+.side-dot {
+    width: 0.6rem;
+    height: 0.6rem;
+    border-radius: 50%;
+    border: 1px solid #555a70;
+}
+.side-dot--white { background: var(--white-sq); }
+.side-dot--black { background: #2b2b33; margin-left: 0.4rem; }
+
+.public-game-room {
+    font-family: ui-monospace, 'Cascadia Mono', Consolas, monospace;
+    font-size: 0.8rem;
+    letter-spacing: 0.06em;
+    color: var(--text-dim);
+}
+
+.public-game-join {
+    padding: 0.4rem 0.9rem;
+    border: none;
+    border-radius: 8px;
+    background: var(--accent);
+    color: #000;
+    font-size: 0.8rem;
+    font-weight: 700;
+    cursor: pointer;
+}
+.public-game-join:hover:not(:disabled) { opacity: 0.88; }
+.public-game-join:disabled { opacity: 0.45; cursor: not-allowed; }
+.public-game-join:focus-visible { outline: 2px solid var(--text); outline-offset: 2px; }
+
+.room-start { display: flex; gap: 0.5rem; }
+.room-start .back-btn { flex: 1; }
+
+.room-hint {
+    font-size: 0.78rem;
+    line-height: 1.5;
+    color: var(--text-dim);
+}
+
+.room-connecting {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+}
+.room-connecting .btn-spinner { width: 0.9rem; height: 0.9rem; }
+
 .room-join-row { display: flex; gap: 0.5rem; }
 
 .room-input {
@@ -106,3 +232,13 @@
 }
 
 .room-share button:focus-visible { outline: 2px solid var(--text); outline-offset: 2px; }
+
+.room-share-kind {
+    padding: 0.1rem 0.5rem;
+    border-radius: 999px;
+    font-size: 0.7rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+}
+.room-share-kind--public  { background: rgba(86, 197, 150, 0.15); color: var(--success); }
+.room-share-kind--private { background: var(--surface-alt);       color: var(--text-dim); }

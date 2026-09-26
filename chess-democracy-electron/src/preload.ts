@@ -9,6 +9,7 @@ import {
     ChessDemocracyAPI,
     Team,
     NetworkKind,
+    Visibility,
 } from './ipc-channels';
 
 function listen<T>(channel: string, cb: (data: T) => void): () => void {
@@ -83,8 +84,11 @@ const api: ChessDemocracyAPI = {
     getNetworkOptions: () =>
         ipcRenderer.invoke(INVOKE.NETWORK_GET_OPTIONS),
 
-    connectNetwork: (network: NetworkKind, room?: string) =>
-        ipcRenderer.invoke(INVOKE.NETWORK_CONNECT, { network, room }),
+    connectNetwork: (network: NetworkKind, room?: string, visibility?: Visibility) =>
+        ipcRenderer.invoke(INVOKE.NETWORK_CONNECT, { network, room, visibility }),
+
+    browsePublicGames: () =>
+        ipcRenderer.invoke(INVOKE.NETWORK_BROWSE_PUBLIC),
 
     leaveNetwork: () =>
         ipcRenderer.invoke(INVOKE.NETWORK_LEAVE),

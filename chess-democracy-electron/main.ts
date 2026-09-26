@@ -309,14 +309,14 @@ async function loadIdentity(requestedPath?: string): Promise<{ publicKey: string
     return { publicKey, identityPath: resolvedPath };
 }
 
-async function connectNetwork(kind: string, room?: string): Promise<void> {
+async function connectNetwork(kind: string, room?: string, visibility?: string): Promise<void> {
     if (!identityPath) throw new Error('no_identity');
 
     const [{ Node }, { networkFactory }] = await Promise.all([
         coreModule<{ Node: new (identityPath?: string, createNetwork?: unknown) => NodeInterface }>('core/node.js'),
-        coreModule<{ networkFactory(kind: string, choice?: { room?: string }): unknown }>('network/networks.js'),
+        coreModule<{ networkFactory(kind: string, choice?: { room?: string; visibility?: string }): unknown }>('network/networks.js'),
     ]);
-    const factory = networkFactory(kind, { room });   // throws if unavailable, or global without a room
+    const factory = networkFactory(kind, { room, visibility });   // throws if unavailable, or global without a room
 
     stopNode();                             // switching: drop the old network first
     node = new Node(identityPath, factory);
@@ -385,12 +385,21 @@ function registerIdentityHandlers(): void {
         return ok(networkOptions());
     });
 
-    ipcMain.handle(INVOKE.NETWORK_CONNECT, async (_e: IpcMainInvokeEvent, payload: { network: string; room?: string }) => {
+    ipcMain.handle(INVOKE.NETWORK_CONNECT, async (_e: IpcMainInvokeEvent, payload: { network: string; room?: string; visibility?: string }) => {
         try {
-            await connectNetwork(payload?.network, payload?.room);
+            await connectNetwork(payload?.network, payload?.room, payload?.visibility);
             return ok({ network: payload.network });
         } catch (err: any) {
             return fail(err?.message ?? 'failed_to_connect');
+        }
+    });
+
+    ipcMain.handle(INVOKE.NETWORK_BROWSE_PUBLIC, async () => {
+        try {
+            const { browsePublicGames } = await coreModule<{ browsePublicGames(): Promise<unknown> }>('network/globalnetwork/lobby.js');
+            return ok(await browsePublicGames());
+        } catch (err: any) {
+            return fail(err?.message ?? 'failed_to_browse');
         }
     });
 
@@ -454,7 +463,7 @@ app.on('before-quit', () => {
         INVOKE.IDENTITY_GET_PREFS, INVOKE.IDENTITY_START,
         INVOKE.IDENTITY_SAVE_PREF, INVOKE.IDENTITY_LOGOUT,
         INVOKE.IDENTITY_OPEN_FILE,
-        INVOKE.NETWORK_GET_OPTIONS, INVOKE.NETWORK_CONNECT, INVOKE.NETWORK_LEAVE,
+        INVOKE.NETWORK_GET_OPTIONS, INVOKE.NETWORK_CONNECT, INVOKE.NETWORK_LEAVE, INVOKE.NETWORK_BROWSE_PUBLIC,
     ].forEach(ch => ipcMain.removeHandler(ch));
 });
 

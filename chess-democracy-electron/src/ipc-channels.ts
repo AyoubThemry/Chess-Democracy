@@ -89,6 +89,7 @@ export const INVOKE = {
     NETWORK_GET_OPTIONS: 'network:get_options',
     NETWORK_CONNECT:     'network:connect',
     NETWORK_LEAVE:       'network:leave',
+    NETWORK_BROWSE_PUBLIC: 'network:browse_public',
 
 } as const;
 
@@ -179,14 +180,30 @@ export interface InvokeMap {
         result:  IpcResult<NetworkOption[]>;
     };
     [INVOKE.NETWORK_CONNECT]: {
-        /** `room` is the code players share; the global network needs one. */
-        payload: { network: NetworkKind; room?: string };
+        /** `room` is the code players share; the global network needs one. Public games are listed in the lobby. */
+        payload: { network: NetworkKind; room?: string; visibility?: Visibility };
         result:  IpcResult<{ network: NetworkKind }>;
     };
     [INVOKE.NETWORK_LEAVE]: {
         payload: void;
         result:  IpcResult<void>;
     };
+    [INVOKE.NETWORK_BROWSE_PUBLIC]: {
+        payload: void;
+        result:  IpcResult<PublicGame[]>;
+    };
+}
+
+export type Visibility = 'public' | 'private';
+
+/** A public game open to join, as listed in the internet lobby. */
+export interface PublicGame {
+    room:      string;
+    hostKey:   string;
+    players:   number;
+    whites:    number;
+    blacks:    number;
+    updatedAt: number;
 }
 
 export type NetworkKind = 'local' | 'global';
@@ -370,7 +387,8 @@ export interface ChessDemocracyAPI {
     openIdentityFile(): Promise<InvokeMap[typeof INVOKE.IDENTITY_OPEN_FILE]['result']>;
 
     getNetworkOptions(): Promise<InvokeMap[typeof INVOKE.NETWORK_GET_OPTIONS]['result']>;
-    connectNetwork(network: NetworkKind, room?: string): Promise<InvokeMap[typeof INVOKE.NETWORK_CONNECT]['result']>;
+    connectNetwork(network: NetworkKind, room?: string, visibility?: Visibility): Promise<InvokeMap[typeof INVOKE.NETWORK_CONNECT]['result']>;
+    browsePublicGames(): Promise<InvokeMap[typeof INVOKE.NETWORK_BROWSE_PUBLIC]['result']>;
     /** Back to the network screen. Only before Ready; a running game stays on its network. */
     leaveNetwork():      Promise<InvokeMap[typeof INVOKE.NETWORK_LEAVE]['result']>;
     offerDraw():        Promise<InvokeMap[typeof INVOKE.GAME_OFFER_DRAW]['result']>;
