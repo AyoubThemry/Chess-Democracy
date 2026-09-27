@@ -12,6 +12,7 @@ import type { GameSnapshot } from "../game/snapshot.js";
 import { MessageCallbacks }        from "../network/message-service.js";
 import { ConfigHandshake }         from "./config-handshake.js";
 import { Roster }                  from "./roster.js";
+import { ResignVote }              from "./resign-vote.js";
 import { randomUUID }              from "crypto";
 import { EventEmitter }            from "events";
 import { join }                    from "node:path";
@@ -68,12 +69,8 @@ export class Node extends EventEmitter {
     // After a player reconnects, don't count votes until states are exchanged.
     private _resyncGraceUntil = 0;
 
-    // Resign vote state
-    private _resignVote: {
-        yesVoters: Set<string>;
-        expiresAt: number;
-        timer:     NodeJS.Timeout;
-    } | null = null;
+    // Our side's vote to resign, while one is open
+    private resignVote: ResignVote | null = null;
 
     // Network controller
     private net?:    GameNetwork;
@@ -357,22 +354,15 @@ export class Node extends EventEmitter {
 
                 // A teammate started a resign vote we don't know about yet —
                 // open a local window so our renderer shows the banner too.
-                if (!this._resignVote) {
-                    const expiresAt = Date.now() + this.gameConfig.resignWindowMs;
-                    const timer = setTimeout(() => {
-                        this._resignVote = null;
-                        this.emit('resign:vote_expired', {});
-                    }, this.gameConfig.resignWindowMs);
-                    timer.unref();
-                    this._resignVote = { yesVoters: new Set(), expiresAt, timer };
-                    this.emit('resign:vote_started', { expiresAt });
+                if (!this.resignVote) {
+                    this.openResignVote();
                     logger.info(`Resign vote window opened by teammate`, { peer: senderKey.slice(0, 8) });
                 }
+                const vote = this.resignVote!;
 
-                if (this._resignVote.yesVoters.has(senderKey)) return; // duplicate
-                this._resignVote.yesVoters.add(senderKey);
+                if (!vote.add(senderKey)) return; // duplicate
                 this.emit('resign:vote_updated', {
-                    yesVotes:          this._resignVote.yesVoters.size,
+                    yesVotes:          vote.yesVotes,
                     connectedTeamSize: this.connectedTeamSize(),
                 });
                 logger.info(`Resign vote received from peer`, { peer: senderKey.slice(0, 8) });
@@ -812,10 +802,7 @@ export class Node extends EventEmitter {
         logger.error(`Out of sync with a peer, stopping the game`, { peer: peerKey.slice(0, 8), reason });
 
         this.game.finish({ winner: null, reason: 'desync' });
-        if (this._resignVote) {
-            clearTimeout(this._resignVote.timer);
-            this._resignVote = null;
-        }
+        this.closeResignVote();
         clearTimeout(this._voteTimer);
         clearTimeout(this._moveTimeoutTimer);
         this._voteTimer        = undefined;
@@ -1073,10 +1060,7 @@ export class Node extends EventEmitter {
         this.game.finish({ winner: result.winner, reason: result.reason });
 
         // Clear resign vote if one was open
-        if (this._resignVote) {
-            clearTimeout(this._resignVote.timer);
-            this._resignVote = null;
-        }
+        this.closeResignVote();
 
         clearTimeout(this._voteTimer);
         clearTimeout(this._moveTimeoutTimer);
@@ -1112,13 +1096,27 @@ export class Node extends EventEmitter {
         return count;
     }
 
+    /** Opens our side's resign vote and tells the UI. It lapses after the configured window. */
+    private openResignVote(): ResignVote {
+        const vote = new ResignVote(this.gameConfig.resignWindowMs, () => {
+            this.resignVote = null;
+            this.emit('resign:vote_expired', {});
+            logger.info(`Resign vote expired`);
+        });
+        this.resignVote = vote;
+        this.emit('resign:vote_started', { expiresAt: vote.expiresAt });
+        return vote;
+    }
+
+    private closeResignVote(): void {
+        this.resignVote?.cancel();
+        this.resignVote = null;
+    }
+
     private checkResignThreshold(): void {
-        if (!this._resignVote || this.game.phase !== 'in_progress') return;
-        const teamSize = this.connectedTeamSize();
-        const yesVotes = this._resignVote.yesVoters.size;
-        if (teamSize > 0 && yesVotes / teamSize >= this.gameConfig.resignThreshold) {
-            clearTimeout(this._resignVote.timer);
-            this._resignVote = null;
+        if (!this.resignVote || this.game.phase !== 'in_progress') return;
+        if (this.resignVote.passes(this.connectedTeamSize(), this.gameConfig.resignThreshold)) {
+            this.closeResignVote();
             this._executeResign();
         }
     }
@@ -1153,36 +1151,25 @@ export class Node extends EventEmitter {
         if (!myTeam) return 'error:no_team';
 
         // Start a new vote window if none is active
-        if (!this._resignVote) {
-            const expiresAt = Date.now() + this.gameConfig.resignWindowMs;
-            const timer = setTimeout(() => {
-                this._resignVote = null;
-                this.emit('resign:vote_expired', {});
-                logger.info(`Resign vote expired`);
-            }, this.gameConfig.resignWindowMs);
-            timer.unref();
-            this._resignVote = { yesVoters: new Set(), expiresAt, timer };
-            this.emit('resign:vote_started', { expiresAt });
-            logger.info(`Resign vote started`, { expiresAt });
+        if (!this.resignVote) {
+            const vote = this.openResignVote();
+            logger.info(`Resign vote started`, { expiresAt: vote.expiresAt });
         }
+        const vote = this.resignVote!;
 
         // Deduplicate — self can only vote once
-        if (this._resignVote.yesVoters.has(this.identity.publicKey)) {
-            return 'error:already_voted';
-        }
-
-        this._resignVote.yesVoters.add(this.identity.publicKey);
+        if (!vote.add(this.identity.publicKey)) return 'error:already_voted';
 
         // Send only to alive teammates (opponent never sees this)
         this.net?.broadcastResignVoteToTeam(myTeam);
 
         this.emit('resign:vote_updated', {
-            yesVotes:         this._resignVote.yesVoters.size,
+            yesVotes:         vote.yesVotes,
             connectedTeamSize: this.connectedTeamSize(),
         });
 
         logger.info(`Resign vote cast`, {
-            yesVotes:  this._resignVote.yesVoters.size,
+            yesVotes:  vote.yesVotes,
             teamSize:  this.connectedTeamSize(),
             threshold: this.gameConfig.resignThreshold,
         });
@@ -1223,10 +1210,7 @@ export class Node extends EventEmitter {
         this._voteTimer          = undefined;
         this._moveTimeoutTimer   = undefined;
 
-        if (this._resignVote) {
-            clearTimeout(this._resignVote.timer);
-            this._resignVote = null;
-        }
+        this.closeResignVote();
 
         this.game.reset();
         this.roster.clear();
@@ -1253,10 +1237,7 @@ export class Node extends EventEmitter {
         clearTimeout(this.gameStartTimeout);
         clearTimeout(this._voteTimer);
         clearTimeout(this._moveTimeoutTimer);
-        if (this._resignVote) {
-            clearTimeout(this._resignVote.timer);
-            this._resignVote = null;
-        }
+        this.closeResignVote();
         this.stopped = true;
         this.net?.stop();
         this.state.peers.clear();
