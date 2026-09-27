@@ -6,10 +6,11 @@ import { getOrCreateIdentity }     from "../protocol/generateidentity.js";
 import { GAME_CONFIG, VOTE_CONFIG } from "../utils/config.js";
 import { logger }                  from "../utils/logger.js";
 import { GameState, checkTeamBalance, Team, GameResult } from "../game/game-state.js";
-import { VotingState, GameConfig, DEFAULT_GAME_CONFIG, TallyResult, tallyMoves } from "../game/voting-state.js";
+import { VotingState, GameConfig, TallyResult, tallyMoves } from "../game/voting-state.js";
 import { verifyTally, checkVote, TallyClaim } from "../game/verify-tally.js";
 import type { GameSnapshot } from "../game/snapshot.js";
 import { MessageCallbacks }        from "../network/message-service.js";
+import { ConfigHandshake }         from "./config-handshake.js";
 import { randomUUID }              from "crypto";
 import { EventEmitter }            from "events";
 import { join }                    from "node:path";
@@ -49,11 +50,8 @@ export class Node extends EventEmitter {
     private readyCheckStartedAt?: number;
     private gameStartTimeout?:    NodeJS.Timeout;
 
-    // Config handshake state
-    private _gameConfig:                GameConfig = { ...DEFAULT_GAME_CONFIG };
-    private _configVersion:             number     = 0;
-    private _selfAcceptedConfigVersion: number | null = 0; // 0 = auto-accept default
-    private _peerAcceptedVersions:      Map<string, number> = new Map();
+    // The settings, and who has agreed to them
+    private readonly configHandshake = new ConfigHandshake();
 
     // Voting state
     private _voting:          VotingState | null = null;
@@ -111,10 +109,10 @@ export class Node extends EventEmitter {
     get gameState(): GameState          { return this.game; }
     get chosenTeam(): Team | null       { return this.game.myTeam; }
 
-    get gameConfig():                GameConfig         { return { ...this._gameConfig }; }
-    get configVersion():             number             { return this._configVersion; }
-    get selfAcceptedConfigVersion(): number | null      { return this._selfAcceptedConfigVersion; }
-    get peerAcceptedVersions():      Map<string, number>{ return new Map(this._peerAcceptedVersions); }
+    get gameConfig():                GameConfig         { return this.configHandshake.config; }
+    get configVersion():             number             { return this.configHandshake.version; }
+    get selfAcceptedConfigVersion(): number | null      { return this.configHandshake.selfAcceptedVersion; }
+    get peerAcceptedVersions():      Map<string, number>{ return this.configHandshake.peerAcceptedVersions; }
     get activeVoting():              VotingState | null { return this._voting; }
 
     // Public API
@@ -132,38 +130,15 @@ export class Node extends EventEmitter {
         if (this.game.phase !== 'waiting_for_side' && this.game.phase !== 'waiting_for_ready') {
             return `error:wrong_phase:${this.game.phase}`;
         }
-        if (voteWindowMs < VOTE_CONFIG.MIN_VOTE_WINDOW_MS || voteWindowMs > VOTE_CONFIG.MAX_VOTE_WINDOW_MS) {
-            return `error:invalid_vote_window:${voteWindowMs}`;
-        }
-        if (maxRevotes < 0 || maxRevotes > 10) {
-            return `error:invalid_max_revotes:${maxRevotes}`;
-        }
-        if (resignThreshold !== undefined && (resignThreshold < 0.5 || resignThreshold > 1.0)) {
-            return `error:invalid_resign_threshold:${resignThreshold}`;
-        }
-        if (resignWindowMs !== undefined && (resignWindowMs < 10_000 || resignWindowMs > 300_000)) {
-            return `error:invalid_resign_window:${resignWindowMs}`;
-        }
+        const invalid = this.configHandshake.propose(voteWindowMs, maxRevotes, resignThreshold, resignWindowMs);
+        if (invalid) return invalid;
 
-        const newThreshold = resignThreshold ?? this._gameConfig.resignThreshold;
-        const newWindow    = resignWindowMs  ?? this._gameConfig.resignWindowMs;
+        const config  = this.configHandshake.config;
+        const version = this.configHandshake.version;
+        this.net?.broadcastConfigProposal(config, version);
 
-        this._configVersion++;
-        this._gameConfig = { voteWindowMs, maxRevotes, resignThreshold: newThreshold, resignWindowMs: newWindow };
-        this._selfAcceptedConfigVersion = this._configVersion;
-        this._peerAcceptedVersions.clear();
-
-        this.net?.broadcastConfigProposal(this._gameConfig, this._configVersion);
-
-        logger.info(`Config proposed`, { ...this._gameConfig, version: this._configVersion });
-        this.emit('config:updated', {
-            voteWindowMs,
-            maxRevotes,
-            resignThreshold: newThreshold,
-            resignWindowMs:  newWindow,
-            version:         this._configVersion,
-            proposerKey:     this.identity.publicKey,
-        });
+        logger.info(`Config proposed`, { ...config, version });
+        this.emit('config:updated', { ...config, version, proposerKey: this.identity.publicKey });
 
         return 'ok';
     }
@@ -173,11 +148,11 @@ export class Node extends EventEmitter {
             return `error:wrong_phase:${this.game.phase}`;
         }
 
-        this._selfAcceptedConfigVersion = this._configVersion;
-        this.net?.broadcastConfigAccept(this._configVersion);
+        const version = this.configHandshake.acceptCurrent();
+        this.net?.broadcastConfigAccept(version);
 
-        logger.info(`Config accepted`, { version: this._configVersion });
-        this.emit('config:self_accepted', { version: this._configVersion });
+        logger.info(`Config accepted`, { version });
+        this.emit('config:self_accepted', { version });
 
         return 'ok';
     }
@@ -274,47 +249,21 @@ export class Node extends EventEmitter {
             },
 
             onConfigProposal: (senderKey, config, version) => {
-                if (version < this._configVersion) {
-                    logger.debug(`Stale config_proposal ignored`, { version, current: this._configVersion });
+                const outcome = this.configHandshake.receiveProposal(senderKey, config, version);
+                if (outcome.kind === 'stale') {
+                    logger.debug(`Stale config_proposal ignored`, { version, current: this.configHandshake.version });
                     return;
                 }
-
-                if (
-                    typeof config?.voteWindowMs !== 'number' ||
-                    typeof config?.maxRevotes   !== 'number' ||
-                    config.voteWindowMs < VOTE_CONFIG.MIN_VOTE_WINDOW_MS ||
-                    config.voteWindowMs > VOTE_CONFIG.MAX_VOTE_WINDOW_MS ||
-                    config.maxRevotes < 0 || config.maxRevotes > 10
-                ) {
+                if (outcome.kind === 'invalid') {
                     logger.warn(`Invalid config_proposal rejected`, { senderKey: senderKey.slice(0, 8), config, version });
                     return;
                 }
 
-                const sameConfig =
-                    version === this._configVersion &&
-                    config.voteWindowMs === this._gameConfig.voteWindowMs &&
-                    config.maxRevotes   === this._gameConfig.maxRevotes   &&
-                    this._selfAcceptedConfigVersion === this._configVersion;
-
-                this._configVersion = version;
-                this._gameConfig    = config;
-                // Drop acceptances of older proposals, but keep any for this
-                // one that arrived before the proposal itself did.
-                const earlyAccepts = [...this._peerAcceptedVersions]
-                    .filter(([key, v]) => v === version && key !== senderKey)
-                    .map(([key]) => key);
-                for (const [key, v] of this._peerAcceptedVersions) {
-                    if (v < version) this._peerAcceptedVersions.delete(key);
-                }
-                this._peerAcceptedVersions.set(senderKey, version);
-
-                if (sameConfig) {
+                if (outcome.kind === 'matched') {
                     // Already on this exact config — auto-accept and reply
-                    this._selfAcceptedConfigVersion = version;
                     this.net?.broadcastConfigAccept(version);
                     logger.debug(`Auto-accepted matching config_proposal`, { version });
                 } else {
-                    this._selfAcceptedConfigVersion = null;
                     this.emit('config:updated', {
                         voteWindowMs: config.voteWindowMs,
                         maxRevotes:   config.maxRevotes,
@@ -323,17 +272,13 @@ export class Node extends EventEmitter {
                     });
                 }
                 // config:updated resets the UI's list to just the proposer.
-                for (const peerId of earlyAccepts) {
+                for (const peerId of outcome.earlyAccepts) {
                     this.emit('config:peer_accepted', { peerId, version });
                 }
             },
 
             onConfigAccept: (senderKey, version) => {
-                if (version < this._configVersion) return;
-                this._peerAcceptedVersions.set(senderKey, version);
-                // With 3+ players, someone's accept can overtake the proposal it
-                // accepts. Keep it; it counts once the proposal gets here.
-                if (version > this._configVersion) return;
+                if (this.configHandshake.receiveAccept(senderKey, version) !== 'counted') return;
                 logger.info(`Peer accepted config`, { peer: senderKey.slice(0, 8), version });
                 this.emit('config:peer_accepted', { peerId: senderKey, version });
             },
@@ -412,11 +357,11 @@ export class Node extends EventEmitter {
                 // A teammate started a resign vote we don't know about yet —
                 // open a local window so our renderer shows the banner too.
                 if (!this._resignVote) {
-                    const expiresAt = Date.now() + this._gameConfig.resignWindowMs;
+                    const expiresAt = Date.now() + this.gameConfig.resignWindowMs;
                     const timer = setTimeout(() => {
                         this._resignVote = null;
                         this.emit('resign:vote_expired', {});
-                    }, this._gameConfig.resignWindowMs);
+                    }, this.gameConfig.resignWindowMs);
                     timer.unref();
                     this._resignVote = { yesVoters: new Set(), expiresAt, timer };
                     this.emit('resign:vote_started', { expiresAt });
@@ -479,14 +424,7 @@ export class Node extends EventEmitter {
     }
 
     private allConfigAccepted(): boolean {
-        if (this.state.peers.size === 0) return true; // solo — no peers to disagree
-        if (this._selfAcceptedConfigVersion !== this._configVersion) return false;
-        for (const peer of this.state.peers.values()) {
-            if ((this._peerAcceptedVersions.get(peer.peerPublicNodeId) ?? -1) !== this._configVersion) {
-                return false;
-            }
-        }
-        return true;
+        return this.configHandshake.allAccepted(this.state.peers.keys());
     }
 
     private broadcastReadyAndBeginCheck(): void {
@@ -601,7 +539,7 @@ export class Node extends EventEmitter {
     // Voting window management
 
     private openVotingWindow(turnIndex: number, windowStartTime: number, round = 0): void {
-        const windowCloseAt = windowStartTime + this._gameConfig.voteWindowMs;
+        const windowCloseAt = windowStartTime + this.gameConfig.voteWindowMs;
         this._voting = new VotingState(turnIndex, windowCloseAt, round);
 
         const tallyTime = windowCloseAt + VOTE_CONFIG.VOTE_GRACE_MS;
@@ -638,7 +576,7 @@ export class Node extends EventEmitter {
         this.emit('vote:window_opened', {
             turnIndex,
             windowCloseAt,
-            voteWindowMs: this._gameConfig.voteWindowMs,
+            voteWindowMs: this.gameConfig.voteWindowMs,
             isMyTurn:     this.game.isMyTurn,
         });
     }
@@ -783,7 +721,7 @@ export class Node extends EventEmitter {
             this._voteTimer = undefined;
             this.openVotingWindow(
                 snap.moves.length,
-                snap.windowCloseAt - this._gameConfig.voteWindowMs,
+                snap.windowCloseAt - this.gameConfig.voteWindowMs,
                 snap.round,
             );
         }
@@ -967,7 +905,7 @@ export class Node extends EventEmitter {
     private maybeRevote(): void {
         if (!this._voting) return;
 
-        if (this._voting.revoteCount >= this._gameConfig.maxRevotes) {
+        if (this._voting.revoteCount >= this.gameConfig.maxRevotes) {
             logger.warn(`Max revotes exceeded — abandoning game`);
             this.game.finish({ winner: null, reason: 'revotes_exhausted' });
             this._voting    = null;
@@ -983,7 +921,7 @@ export class Node extends EventEmitter {
         }
 
         const prevWindowCloseAt = this._voting.windowCloseAt;
-        const newWindowCloseAt  = prevWindowCloseAt + VOTE_CONFIG.VOTE_GRACE_MS + this._gameConfig.voteWindowMs;
+        const newWindowCloseAt  = prevWindowCloseAt + VOTE_CONFIG.VOTE_GRACE_MS + this.gameConfig.voteWindowMs;
         this._voting.openRevote(newWindowCloseAt);
 
         const delay = Math.max(0, newWindowCloseAt + VOTE_CONFIG.VOTE_GRACE_MS - this.getSynchronizedTime());
@@ -998,7 +936,7 @@ export class Node extends EventEmitter {
             turnIndex:     this._voting.turnIndex,
             revoteCount:   this._voting.revoteCount,
             windowCloseAt: newWindowCloseAt,
-            voteWindowMs:  this._gameConfig.voteWindowMs,
+            voteWindowMs:  this.gameConfig.voteWindowMs,
         });
     }
 
@@ -1192,7 +1130,7 @@ export class Node extends EventEmitter {
         if (!this._resignVote || this.game.phase !== 'in_progress') return;
         const teamSize = this.connectedTeamSize();
         const yesVotes = this._resignVote.yesVoters.size;
-        if (teamSize > 0 && yesVotes / teamSize >= this._gameConfig.resignThreshold) {
+        if (teamSize > 0 && yesVotes / teamSize >= this.gameConfig.resignThreshold) {
             clearTimeout(this._resignVote.timer);
             this._resignVote = null;
             this._executeResign();
@@ -1230,12 +1168,12 @@ export class Node extends EventEmitter {
 
         // Start a new vote window if none is active
         if (!this._resignVote) {
-            const expiresAt = Date.now() + this._gameConfig.resignWindowMs;
+            const expiresAt = Date.now() + this.gameConfig.resignWindowMs;
             const timer = setTimeout(() => {
                 this._resignVote = null;
                 this.emit('resign:vote_expired', {});
                 logger.info(`Resign vote expired`);
-            }, this._gameConfig.resignWindowMs);
+            }, this.gameConfig.resignWindowMs);
             timer.unref();
             this._resignVote = { yesVoters: new Set(), expiresAt, timer };
             this.emit('resign:vote_started', { expiresAt });
@@ -1260,7 +1198,7 @@ export class Node extends EventEmitter {
         logger.info(`Resign vote cast`, {
             yesVotes:  this._resignVote.yesVoters.size,
             teamSize:  this.connectedTeamSize(),
-            threshold: this._gameConfig.resignThreshold,
+            threshold: this.gameConfig.resignThreshold,
         });
 
         this.checkResignThreshold();
@@ -1310,10 +1248,7 @@ export class Node extends EventEmitter {
         this._resyncGraceUntil = 0;
         this._voting    = null;
 
-        this._gameConfig                = { ...DEFAULT_GAME_CONFIG };
-        this._configVersion             = 0;
-        this._selfAcceptedConfigVersion = 0;
-        this._peerAcceptedVersions.clear();
+        this.configHandshake.reset();
 
         this.state.acceptingConnection = true;
 
@@ -1402,7 +1337,7 @@ export class Node extends EventEmitter {
             this.net.sendSideChoiceToPeer(this.game.myTeam, peer);
         }
         if (this.net) {
-            this.net.sendConfigProposalToPeer(this._gameConfig, this._configVersion, peer);
+            this.net.sendConfigProposalToPeer(this.gameConfig, this.configVersion, peer);
         }
     }
 
