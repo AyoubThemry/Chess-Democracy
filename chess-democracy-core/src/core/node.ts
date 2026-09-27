@@ -11,6 +11,7 @@ import { verifyTally, checkVote, TallyClaim } from "../game/verify-tally.js";
 import type { GameSnapshot } from "../game/snapshot.js";
 import { MessageCallbacks }        from "../network/message-service.js";
 import { ConfigHandshake }         from "./config-handshake.js";
+import { Roster }                  from "./roster.js";
 import { randomUUID }              from "crypto";
 import { EventEmitter }            from "events";
 import { join }                    from "node:path";
@@ -63,7 +64,7 @@ export class Node extends EventEmitter {
     private _drawOfferedBy: Team | null = null;
 
     // Who's in the current game, and their teams. Empty outside a game.
-    private readonly roster = new Map<string, Team>();
+    private readonly roster = new Roster();
     // After a player reconnects, don't count votes until states are exchanged.
     private _resyncGraceUntil = 0;
 
@@ -606,7 +607,7 @@ export class Node extends EventEmitter {
         }
         if (!this.hasQuorum()) {
             logger.warn(`Too few players connected to count votes, waiting`, {
-                connected: this.connectedPlayers().length,
+                connected: this.roster.playing(this.connected()).length,
                 players:   this.roster.size,
             });
         }
@@ -796,7 +797,8 @@ export class Node extends EventEmitter {
     }
 
     private teamOf(publicKey: string): Team | null {
-        if (this.roster.has(publicKey))        return this.roster.get(publicKey)!;
+        const inGame = this.roster.teamOf(publicKey);
+        if (inGame)                                return inGame;
         if (publicKey === this.identity.publicKey) return this.game.myTeam;
         return this.allPeers.get(publicKey)?.team ?? null;
     }
@@ -978,38 +980,22 @@ export class Node extends EventEmitter {
         this.scheduleGameBegin(theirStart);
     }
 
-    /** Lowest public key among us and our peers. It picks the gameId and start time. */
-    private masterKey(): string {
-        return this.connectedPlayers().sort()[0];
+    // Roster: who's in the game, who among them is master, and whether
+    // enough of them are connected to count votes.
+
+    /** Us and everyone we're connected to. */
+    private connected(): string[] {
+        return [this.identity.publicKey, ...this.allPeers.keys()];
     }
 
-    // Roster
-    //
-    // Who is in this game, fixed when the countdown starts. Before, "the game"
-    // meant "whoever is connected right now", so a new app appearing on the
-    // LAN mid-game joined the peer list and could even become master.
-
-    /** Everyone in the game (us included) who is currently connected. Outside a game, everyone connected. */
-    private connectedPlayers(): string[] {
-        const connected = [this.identity.publicKey, ...this.allPeers.keys()];
-        return this.roster.size ? connected.filter(k => this.roster.has(k)) : connected;
-    }
-
-    /**
-     * Votes are only counted while more than half the players are connected.
-     * Without this a player who drops out is alone, counts as master, and
-     * keeps playing a game of their own that can't be merged back.
-     */
-    private hasQuorum(): boolean {
-        return this.roster.size === 0 || this.connectedPlayers().length * 2 > this.roster.size;
-    }
+    private masterKey(): string { return this.roster.master(this.connected()); }
+    private hasQuorum(): boolean { return this.roster.hasQuorum(this.connected()); }
 
     private recordRoster(): void {
-        this.roster.clear();
-        this.roster.set(this.identity.publicKey, this.game.myTeam!);
-        for (const [key, peer] of this.allPeers) {
-            if (peer.team) this.roster.set(key, peer.team);
-        }
+        this.roster.record([
+            [this.identity.publicKey, this.game.myTeam],
+            ...[...this.allPeers].map(([key, peer]) => [key, peer.team] as [string, Team | null]),
+        ]);
     }
 
     /** Players and sides as this node sees them, and whether others can still join. */
@@ -1027,7 +1013,7 @@ export class Node extends EventEmitter {
     /** No key: could anyone connect now? With a key: may this peer connect? */
     private acceptsConnection(peerKey?: string): boolean {
         if (this.state.acceptingConnection) return true;          // lobby open
-        return peerKey === undefined ? this.roster.size > 0      // a player might be coming back
+        return peerKey === undefined ? this.roster.inGame        // a player might be coming back
                                      : this.roster.has(peerKey);
     }
 
@@ -1283,7 +1269,7 @@ export class Node extends EventEmitter {
 
         // Mid-game, only players from this game may join. Discovery still
         // dials any app it finds on the network; those connections end here.
-        const inGame = this.roster.size > 0;
+        const inGame = this.roster.inGame;
         if (inGame && !this.roster.has(key)) {
             logger.info(`Connection from outside this game closed`, { peer: key.slice(0, 8) });
             peer.connection.close();
@@ -1308,7 +1294,7 @@ export class Node extends EventEmitter {
 
         if (inGame) {
             // A new connection starts blank. The roster remembers who they are.
-            peer.team  = this.roster.get(key)!;
+            peer.team  = this.roster.teamOf(key)!;
             peer.ready = true;
         }
 
