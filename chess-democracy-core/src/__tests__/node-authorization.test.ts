@@ -67,7 +67,7 @@ describe('Node rejects messages from peers who may not send them', () => {
         cb.onResignVote('black-opponent');
 
         expect(started).not.toHaveBeenCalled();
-        expect((node as unknown as { _resignVote: unknown })._resignVote).toBeNull();
+        expect((node as unknown as { resignVote: unknown }).resignVote).toBeNull();
     });
 
     it('opens the resign vote for a teammate', () => {

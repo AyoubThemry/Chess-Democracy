@@ -6,18 +6,15 @@ import { getOrCreateIdentity }     from "../protocol/generateidentity.js";
 import { GAME_CONFIG, VOTE_CONFIG } from "../utils/config.js";
 import { logger }                  from "../utils/logger.js";
 import { GameState, checkTeamBalance, Team, GameResult } from "../game/game-state.js";
-import { VotingState, GameConfig, DEFAULT_GAME_CONFIG, TallyResult, tallyMoves } from "../game/voting-state.js";
+import { VotingState, GameConfig, TallyResult, tallyMoves, type SignedVote } from "../game/voting-state.js";
 import { verifyTally, checkVote, TallyClaim } from "../game/verify-tally.js";
 import type { GameSnapshot } from "../game/snapshot.js";
 import { MessageCallbacks }        from "../network/message-service.js";
+import { ConfigHandshake }         from "./config-handshake.js";
+import { Roster }                  from "./roster.js";
+import { ResignVote }              from "./resign-vote.js";
 import { randomUUID }              from "crypto";
 import { EventEmitter }            from "events";
-import { join }                    from "node:path";
-import { homedir }                 from "node:os";
-
-function defaultIdentityPath(): string {
-    return join(homedir(), '.chess-democracy', 'identity.pem');
-}
 
 // ---------------------------------------------------------------------------
 // Internal node state
@@ -27,7 +24,6 @@ interface NodeState {
     alivePeersCount:     number;
     acceptingConnection: boolean;
     timeOffset:          number;
-    lastConnectionMs:    number;
 }
 
 export class Node extends EventEmitter {
@@ -40,7 +36,6 @@ export class Node extends EventEmitter {
         alivePeersCount:     0,
         acceptingConnection: true,
         timeOffset:          0,
-        lastConnectionMs:    Date.now(),
     };
 
     // Game state
@@ -49,11 +44,8 @@ export class Node extends EventEmitter {
     private readyCheckStartedAt?: number;
     private gameStartTimeout?:    NodeJS.Timeout;
 
-    // Config handshake state
-    private _gameConfig:                GameConfig = { ...DEFAULT_GAME_CONFIG };
-    private _configVersion:             number     = 0;
-    private _selfAcceptedConfigVersion: number | null = 0; // 0 = auto-accept default
-    private _peerAcceptedVersions:      Map<string, number> = new Map();
+    // The settings, and who has agreed to them
+    private readonly configHandshake = new ConfigHandshake();
 
     // Voting state
     private _voting:          VotingState | null = null;
@@ -65,16 +57,12 @@ export class Node extends EventEmitter {
     private _drawOfferedBy: Team | null = null;
 
     // Who's in the current game, and their teams. Empty outside a game.
-    private readonly roster = new Map<string, Team>();
+    private readonly roster = new Roster();
     // After a player reconnects, don't count votes until states are exchanged.
     private _resyncGraceUntil = 0;
 
-    // Resign vote state
-    private _resignVote: {
-        yesVoters: Set<string>;
-        expiresAt: number;
-        timer:     NodeJS.Timeout;
-    } | null = null;
+    // Our side's vote to resign, while one is open
+    private resignVote: ResignVote | null = null;
 
     // Network controller
     private net?:    GameNetwork;
@@ -95,8 +83,8 @@ export class Node extends EventEmitter {
         private readonly createNetwork: NetworkFactory = LocalNetworkController.create,
     ) {
         super();
-        // TODO(production): always load from identityPath / defaultIdentityPath()
-        // this.identity = loadOrCreateIdentity(identityPath ?? defaultIdentityPath());
+        // The app always passes a path. Without one the key is fresh every
+        // run, which is what tests and the headless CLI want.
         this.identity = identityPath
             ? loadOrCreateIdentity(identityPath)
             : getOrCreateIdentity(); // ephemeral — fresh key every run
@@ -111,10 +99,10 @@ export class Node extends EventEmitter {
     get gameState(): GameState          { return this.game; }
     get chosenTeam(): Team | null       { return this.game.myTeam; }
 
-    get gameConfig():                GameConfig         { return { ...this._gameConfig }; }
-    get configVersion():             number             { return this._configVersion; }
-    get selfAcceptedConfigVersion(): number | null      { return this._selfAcceptedConfigVersion; }
-    get peerAcceptedVersions():      Map<string, number>{ return new Map(this._peerAcceptedVersions); }
+    get gameConfig():                GameConfig         { return this.configHandshake.config; }
+    get configVersion():             number             { return this.configHandshake.version; }
+    get selfAcceptedConfigVersion(): number | null      { return this.configHandshake.selfAcceptedVersion; }
+    get peerAcceptedVersions():      Map<string, number>{ return this.configHandshake.peerAcceptedVersions; }
     get activeVoting():              VotingState | null { return this._voting; }
 
     // Public API
@@ -132,38 +120,15 @@ export class Node extends EventEmitter {
         if (this.game.phase !== 'waiting_for_side' && this.game.phase !== 'waiting_for_ready') {
             return `error:wrong_phase:${this.game.phase}`;
         }
-        if (voteWindowMs < VOTE_CONFIG.MIN_VOTE_WINDOW_MS || voteWindowMs > VOTE_CONFIG.MAX_VOTE_WINDOW_MS) {
-            return `error:invalid_vote_window:${voteWindowMs}`;
-        }
-        if (maxRevotes < 0 || maxRevotes > 10) {
-            return `error:invalid_max_revotes:${maxRevotes}`;
-        }
-        if (resignThreshold !== undefined && (resignThreshold < 0.5 || resignThreshold > 1.0)) {
-            return `error:invalid_resign_threshold:${resignThreshold}`;
-        }
-        if (resignWindowMs !== undefined && (resignWindowMs < 10_000 || resignWindowMs > 300_000)) {
-            return `error:invalid_resign_window:${resignWindowMs}`;
-        }
+        const invalid = this.configHandshake.propose(voteWindowMs, maxRevotes, resignThreshold, resignWindowMs);
+        if (invalid) return invalid;
 
-        const newThreshold = resignThreshold ?? this._gameConfig.resignThreshold;
-        const newWindow    = resignWindowMs  ?? this._gameConfig.resignWindowMs;
+        const config  = this.configHandshake.config;
+        const version = this.configHandshake.version;
+        this.net?.broadcastConfigProposal(config, version);
 
-        this._configVersion++;
-        this._gameConfig = { voteWindowMs, maxRevotes, resignThreshold: newThreshold, resignWindowMs: newWindow };
-        this._selfAcceptedConfigVersion = this._configVersion;
-        this._peerAcceptedVersions.clear();
-
-        this.net?.broadcastConfigProposal(this._gameConfig, this._configVersion);
-
-        logger.info(`Config proposed`, { ...this._gameConfig, version: this._configVersion });
-        this.emit('config:updated', {
-            voteWindowMs,
-            maxRevotes,
-            resignThreshold: newThreshold,
-            resignWindowMs:  newWindow,
-            version:         this._configVersion,
-            proposerKey:     this.identity.publicKey,
-        });
+        logger.info(`Config proposed`, { ...config, version });
+        this.emit('config:updated', { ...config, version, proposerKey: this.identity.publicKey });
 
         return 'ok';
     }
@@ -173,11 +138,11 @@ export class Node extends EventEmitter {
             return `error:wrong_phase:${this.game.phase}`;
         }
 
-        this._selfAcceptedConfigVersion = this._configVersion;
-        this.net?.broadcastConfigAccept(this._configVersion);
+        const version = this.configHandshake.acceptCurrent();
+        this.net?.broadcastConfigAccept(version);
 
-        logger.info(`Config accepted`, { version: this._configVersion });
-        this.emit('config:self_accepted', { version: this._configVersion });
+        logger.info(`Config accepted`, { version });
+        this.emit('config:self_accepted', { version });
 
         return 'ok';
     }
@@ -224,21 +189,7 @@ export class Node extends EventEmitter {
         }
         this._drawOfferedBy = null;
         if (accept) {
-            this.game.finish({ winner: 'draw', reason: 'draw_agreement' });
-            clearTimeout(this._voteTimer);
-            clearTimeout(this._moveTimeoutTimer);
-            this._voteTimer          = undefined;
-            this._moveTimeoutTimer   = undefined;
-            this._voting             = null;
-            this.net?.broadcastGameOver(
-                this.game.gameId, this.game.result!, this.game.fen, this.game.moveHistory.length,
-            );
-            this.emit('game:over', {
-                gameId:    this.game.gameId,
-                result:    this.game.result!,
-                lastFen:   this.game.fen,
-                moveCount: this.game.moveHistory.length,
-            });
+            this.endGame({ result: { winner: 'draw', reason: 'draw_agreement' }, announce: true });
         } else {
             this.net?.broadcastDrawResponse(false);
             this.emit('draw:declined', { by: this.identity.publicKey });
@@ -256,182 +207,23 @@ export class Node extends EventEmitter {
     // Boot
 
     boot(port: number): void {
-        this.state.lastConnectionMs = Date.now();
-
+        // Each message a peer can send, and what handles it.
         const callbacks: MessageCallbacks = {
-            setTimeOffset: (offset) => this.setTimeOffset(offset),
-            onGameStart:   (msg, senderKey) => this.handleGameStart(msg, senderKey),
-            onGameOver:    (msg, senderKey) => this.handleGameOver(msg, senderKey),
-
-            onSideChoice: (senderKey, team) => {
-                this.emit('peer:team_updated', { peerId: senderKey, team });
-            },
-            onReady: (senderKey) => {
-                this.emit('peer:ready_changed', { peerId: senderKey, ready: true });
-            },
-            onUnready: (senderKey) => {
-                this.emit('peer:ready_changed', { peerId: senderKey, ready: false });
-            },
-
-            onConfigProposal: (senderKey, config, version) => {
-                if (version < this._configVersion) {
-                    logger.debug(`Stale config_proposal ignored`, { version, current: this._configVersion });
-                    return;
-                }
-
-                if (
-                    typeof config?.voteWindowMs !== 'number' ||
-                    typeof config?.maxRevotes   !== 'number' ||
-                    config.voteWindowMs < VOTE_CONFIG.MIN_VOTE_WINDOW_MS ||
-                    config.voteWindowMs > VOTE_CONFIG.MAX_VOTE_WINDOW_MS ||
-                    config.maxRevotes < 0 || config.maxRevotes > 10
-                ) {
-                    logger.warn(`Invalid config_proposal rejected`, { senderKey: senderKey.slice(0, 8), config, version });
-                    return;
-                }
-
-                const sameConfig =
-                    version === this._configVersion &&
-                    config.voteWindowMs === this._gameConfig.voteWindowMs &&
-                    config.maxRevotes   === this._gameConfig.maxRevotes   &&
-                    this._selfAcceptedConfigVersion === this._configVersion;
-
-                this._configVersion = version;
-                this._gameConfig    = config;
-                // Drop acceptances of older proposals, but keep any for this
-                // one that arrived before the proposal itself did.
-                const earlyAccepts = [...this._peerAcceptedVersions]
-                    .filter(([key, v]) => v === version && key !== senderKey)
-                    .map(([key]) => key);
-                for (const [key, v] of this._peerAcceptedVersions) {
-                    if (v < version) this._peerAcceptedVersions.delete(key);
-                }
-                this._peerAcceptedVersions.set(senderKey, version);
-
-                if (sameConfig) {
-                    // Already on this exact config — auto-accept and reply
-                    this._selfAcceptedConfigVersion = version;
-                    this.net?.broadcastConfigAccept(version);
-                    logger.debug(`Auto-accepted matching config_proposal`, { version });
-                } else {
-                    this._selfAcceptedConfigVersion = null;
-                    this.emit('config:updated', {
-                        voteWindowMs: config.voteWindowMs,
-                        maxRevotes:   config.maxRevotes,
-                        version,
-                        proposerKey:  senderKey,
-                    });
-                }
-                // config:updated resets the UI's list to just the proposer.
-                for (const peerId of earlyAccepts) {
-                    this.emit('config:peer_accepted', { peerId, version });
-                }
-            },
-
-            onConfigAccept: (senderKey, version) => {
-                if (version < this._configVersion) return;
-                this._peerAcceptedVersions.set(senderKey, version);
-                // With 3+ players, someone's accept can overtake the proposal it
-                // accepts. Keep it; it counts once the proposal gets here.
-                if (version > this._configVersion) return;
-                logger.info(`Peer accepted config`, { peer: senderKey.slice(0, 8), version });
-                this.emit('config:peer_accepted', { peerId: senderKey, version });
-            },
-
-            onDrawOffer: (senderKey) => {
-                if (this.game.phase !== 'in_progress') return;
-                const team = this.teamOf(senderKey);
-                if (!team) return;
-                this._drawOfferedBy = team;
-                // Teammates see the offer too, but only the other side may answer it.
-                this.emit('draw:offered', { from: senderKey, fromSelf: false, byOpponent: team !== this.game.myTeam });
-            },
-
-            onDrawResponse: (senderKey, accepted) => {
-                // accepted=true path: accepter already broadcast game_over; handleGameOver handles it.
-                // declined path: let offeror know via the draw:declined event.
-                if (!accepted) {
-                    this._drawOfferedBy = null;
-                    this.emit('draw:declined', { by: senderKey });
-                }
-            },
-
-            onTallyResult:  (senderKey, claim)    => this.handleTallyResult(senderKey, claim),
-            onGameSnapshot: (senderKey, snapshot) => this.handleGameSnapshot(senderKey, snapshot),
-
-            onVote: (senderKey, turnIndex, round, move, _timestamp, signed) => {
-                if (!this._voting || this._voting.turnIndex !== turnIndex || this._voting.round !== round) {
-                    logger.warn(`Vote for wrong/inactive window`, {
-                        turnIndex,
-                        round,
-                        activeTurn:  this._voting?.turnIndex,
-                        activeRound: this._voting?.round,
-                    });
-                    return;
-                }
-
-                // castVote() checks both of these for our own votes. A peer's
-                // vote arrives here without either, so check them again.
-                const senderTeam = this.allPeers.get(senderKey)?.team ?? null;
-                if (senderTeam !== this.game.currentTurn) {
-                    logger.warn(`Vote from a player not on the side to move`, {
-                        peer: senderKey.slice(0, 8),
-                        senderTeam,
-                        turn: this.game.currentTurn,
-                    });
-                    return;
-                }
-                if (!this.game.legalMoves.includes(move)) {
-                    logger.warn(`Illegal move in peer vote`, { peer: senderKey.slice(0, 8), move });
-                    return;
-                }
-
-                const result = this._voting.castVote(senderKey, move, this.getSynchronizedTime(), signed);
-                if (result === 'ok') {
-                    logger.info(`Peer vote recorded`, { peer: senderKey.slice(0, 8), move, turnIndex });
-                    this.emit('vote:received', { peerId: senderKey, turnIndex, move });
-                } else {
-                    logger.warn(`Peer vote rejected`, { peer: senderKey.slice(0, 8), reason: result });
-                }
-            },
-
-            onResignVote: (senderKey) => {
-                if (this.game.phase !== 'in_progress') return;
-
-                // Resigning is a team decision. SendResignVote only targets
-                // teammates, but that's the sender being polite, not a check.
-                const senderTeam = this.allPeers.get(senderKey)?.team ?? null;
-                if (!this.game.myTeam || senderTeam !== this.game.myTeam) {
-                    logger.warn(`Resign vote from a non-teammate ignored`, {
-                        peer: senderKey.slice(0, 8),
-                        senderTeam,
-                    });
-                    return;
-                }
-
-                // A teammate started a resign vote we don't know about yet —
-                // open a local window so our renderer shows the banner too.
-                if (!this._resignVote) {
-                    const expiresAt = Date.now() + this._gameConfig.resignWindowMs;
-                    const timer = setTimeout(() => {
-                        this._resignVote = null;
-                        this.emit('resign:vote_expired', {});
-                    }, this._gameConfig.resignWindowMs);
-                    timer.unref();
-                    this._resignVote = { yesVoters: new Set(), expiresAt, timer };
-                    this.emit('resign:vote_started', { expiresAt });
-                    logger.info(`Resign vote window opened by teammate`, { peer: senderKey.slice(0, 8) });
-                }
-
-                if (this._resignVote.yesVoters.has(senderKey)) return; // duplicate
-                this._resignVote.yesVoters.add(senderKey);
-                this.emit('resign:vote_updated', {
-                    yesVotes:          this._resignVote.yesVoters.size,
-                    connectedTeamSize: this.connectedTeamSize(),
-                });
-                logger.info(`Resign vote received from peer`, { peer: senderKey.slice(0, 8) });
-                this.checkResignThreshold();
-            },
+            setTimeOffset:    (offset)                       => this.setTimeOffset(offset),
+            onGameStart:      (msg, senderKey)               => this.handleGameStart(msg, senderKey),
+            onGameOver:       (msg, senderKey)               => this.handleGameOver(msg, senderKey),
+            onSideChoice:     (senderKey, team)              => this.emit('peer:team_updated', { peerId: senderKey, team }),
+            onReady:          (senderKey)                    => this.emit('peer:ready_changed', { peerId: senderKey, ready: true }),
+            onUnready:        (senderKey)                    => this.emit('peer:ready_changed', { peerId: senderKey, ready: false }),
+            onConfigProposal: (senderKey, config, version)   => this.handleConfigProposal(senderKey, config, version),
+            onConfigAccept:   (senderKey, version)           => this.handleConfigAccept(senderKey, version),
+            onDrawOffer:      (senderKey)                    => this.handleDrawOffer(senderKey),
+            onDrawResponse:   (senderKey, accepted)          => this.handleDrawResponse(senderKey, accepted),
+            onTallyResult:    (senderKey, claim)             => this.handleTallyResult(senderKey, claim),
+            onGameSnapshot:   (senderKey, snapshot)          => this.handleGameSnapshot(senderKey, snapshot),
+            onVote:           (senderKey, turnIndex, round, move, _timestamp, signed) =>
+                                                                this.handleVote(senderKey, turnIndex, round, move, signed),
+            onResignVote:     (senderKey)                    => this.handleResignVote(senderKey),
         };
 
         this.createNetwork({
@@ -459,6 +251,128 @@ export class Node extends EventEmitter {
         });
     }
 
+    // Messages from peers
+
+    private handleConfigProposal(senderKey: string, config: GameConfig, version: number): void {
+        const outcome = this.configHandshake.receiveProposal(senderKey, config, version);
+        if (outcome.kind === 'stale') {
+            logger.debug(`Stale config_proposal ignored`, { version, current: this.configHandshake.version });
+            return;
+        }
+        if (outcome.kind === 'invalid') {
+            logger.warn(`Invalid config_proposal rejected`, { senderKey: senderKey.slice(0, 8), config, version });
+            return;
+        }
+
+        if (outcome.kind === 'matched') {
+            // Already on this exact config — auto-accept and reply
+            this.net?.broadcastConfigAccept(version);
+            logger.debug(`Auto-accepted matching config_proposal`, { version });
+        } else {
+            this.emit('config:updated', {
+                voteWindowMs: config.voteWindowMs,
+                maxRevotes:   config.maxRevotes,
+                version,
+                proposerKey:  senderKey,
+            });
+        }
+        // config:updated resets the UI's list to just the proposer.
+        for (const peerId of outcome.earlyAccepts) {
+            this.emit('config:peer_accepted', { peerId, version });
+        }
+    }
+
+    private handleConfigAccept(senderKey: string, version: number): void {
+        if (this.configHandshake.receiveAccept(senderKey, version) !== 'counted') return;
+        logger.info(`Peer accepted config`, { peer: senderKey.slice(0, 8), version });
+        this.emit('config:peer_accepted', { peerId: senderKey, version });
+    }
+
+    private handleDrawOffer(senderKey: string): void {
+        if (this.game.phase !== 'in_progress') return;
+        const team = this.teamOf(senderKey);
+        if (!team) return;
+        this._drawOfferedBy = team;
+        // Teammates see the offer too, but only the other side may answer it.
+        this.emit('draw:offered', { from: senderKey, fromSelf: false, byOpponent: team !== this.game.myTeam });
+    }
+
+    private handleDrawResponse(senderKey: string, accepted: boolean): void {
+        // accepted=true path: accepter already broadcast game_over; handleGameOver handles it.
+        // declined path: let offeror know via the draw:declined event.
+        if (!accepted) {
+            this._drawOfferedBy = null;
+            this.emit('draw:declined', { by: senderKey });
+        }
+    }
+
+    private handleVote(senderKey: string, turnIndex: number, round: number, move: string, signed: SignedVote): void {
+        if (!this._voting || this._voting.turnIndex !== turnIndex || this._voting.round !== round) {
+            logger.warn(`Vote for wrong/inactive window`, {
+                turnIndex,
+                round,
+                activeTurn:  this._voting?.turnIndex,
+                activeRound: this._voting?.round,
+            });
+            return;
+        }
+
+        // castVote() checks both of these for our own votes. A peer's
+        // vote arrives here without either, so check them again.
+        const senderTeam = this.allPeers.get(senderKey)?.team ?? null;
+        if (senderTeam !== this.game.currentTurn) {
+            logger.warn(`Vote from a player not on the side to move`, {
+                peer: senderKey.slice(0, 8),
+                senderTeam,
+                turn: this.game.currentTurn,
+            });
+            return;
+        }
+        if (!this.game.legalMoves.includes(move)) {
+            logger.warn(`Illegal move in peer vote`, { peer: senderKey.slice(0, 8), move });
+            return;
+        }
+
+        const result = this._voting.castVote(senderKey, move, this.getSynchronizedTime(), signed);
+        if (result === 'ok') {
+            logger.info(`Peer vote recorded`, { peer: senderKey.slice(0, 8), move, turnIndex });
+            this.emit('vote:received', { peerId: senderKey, turnIndex, move });
+        } else {
+            logger.warn(`Peer vote rejected`, { peer: senderKey.slice(0, 8), reason: result });
+        }
+    }
+
+    private handleResignVote(senderKey: string): void {
+        if (this.game.phase !== 'in_progress') return;
+
+        // Resigning is a team decision. SendResignVote only targets
+        // teammates, but that's the sender being polite, not a check.
+        const senderTeam = this.allPeers.get(senderKey)?.team ?? null;
+        if (!this.game.myTeam || senderTeam !== this.game.myTeam) {
+            logger.warn(`Resign vote from a non-teammate ignored`, {
+                peer: senderKey.slice(0, 8),
+                senderTeam,
+            });
+            return;
+        }
+
+        // A teammate started a resign vote we don't know about yet —
+        // open a local window so our renderer shows the banner too.
+        if (!this.resignVote) {
+            this.openResignVote();
+            logger.info(`Resign vote window opened by teammate`, { peer: senderKey.slice(0, 8) });
+        }
+        const vote = this.resignVote!;
+
+        if (!vote.add(senderKey)) return; // duplicate
+        this.emit('resign:vote_updated', {
+            yesVotes:          vote.yesVotes,
+            connectedTeamSize: this.connectedTeamSize(),
+        });
+        logger.info(`Resign vote received from peer`, { peer: senderKey.slice(0, 8) });
+        this.checkResignThreshold();
+    }
+
     // Ready phase
 
     public ready(): string {
@@ -479,14 +393,7 @@ export class Node extends EventEmitter {
     }
 
     private allConfigAccepted(): boolean {
-        if (this.state.peers.size === 0) return true; // solo — no peers to disagree
-        if (this._selfAcceptedConfigVersion !== this._configVersion) return false;
-        for (const peer of this.state.peers.values()) {
-            if ((this._peerAcceptedVersions.get(peer.peerPublicNodeId) ?? -1) !== this._configVersion) {
-                return false;
-            }
-        }
-        return true;
+        return this.configHandshake.allAccepted(this.state.peers.keys());
     }
 
     private broadcastReadyAndBeginCheck(): void {
@@ -601,7 +508,7 @@ export class Node extends EventEmitter {
     // Voting window management
 
     private openVotingWindow(turnIndex: number, windowStartTime: number, round = 0): void {
-        const windowCloseAt = windowStartTime + this._gameConfig.voteWindowMs;
+        const windowCloseAt = windowStartTime + this.gameConfig.voteWindowMs;
         this._voting = new VotingState(turnIndex, windowCloseAt, round);
 
         const tallyTime = windowCloseAt + VOTE_CONFIG.VOTE_GRACE_MS;
@@ -614,19 +521,7 @@ export class Node extends EventEmitter {
         this._moveTimeoutTimer = setTimeout(() => {
             if (this.game.phase !== 'in_progress') return;
             logger.warn(`Move timeout on turn ${turnIndex} — ending game`);
-            this.game.finish({ winner: null, reason: 'timeout' });
-            clearTimeout(this._voteTimer);
-            this._voteTimer = undefined;
-            this._voting    = null;
-            this.net?.broadcastGameOver(
-                this.game.gameId, this.game.result!, this.game.fen, this.game.moveHistory.length,
-            );
-            this.emit('game:over', {
-                gameId:    this.game.gameId,
-                result:    this.game.result!,
-                lastFen:   this.game.fen,
-                moveCount: this.game.moveHistory.length,
-            });
+            this.endGame({ result: { winner: null, reason: 'timeout' }, announce: true });
         }, GAME_CONFIG.MOVE_TIMEOUT_MS);
 
         logger.info(`Vote window opened`, {
@@ -638,7 +533,7 @@ export class Node extends EventEmitter {
         this.emit('vote:window_opened', {
             turnIndex,
             windowCloseAt,
-            voteWindowMs: this._gameConfig.voteWindowMs,
+            voteWindowMs: this.gameConfig.voteWindowMs,
             isMyTurn:     this.game.isMyTurn,
         });
     }
@@ -668,7 +563,7 @@ export class Node extends EventEmitter {
         }
         if (!this.hasQuorum()) {
             logger.warn(`Too few players connected to count votes, waiting`, {
-                connected: this.connectedPlayers().length,
+                connected: this.roster.playing(this.connected()).length,
                 players:   this.roster.size,
             });
         }
@@ -783,7 +678,7 @@ export class Node extends EventEmitter {
             this._voteTimer = undefined;
             this.openVotingWindow(
                 snap.moves.length,
-                snap.windowCloseAt - this._gameConfig.voteWindowMs,
+                snap.windowCloseAt - this.gameConfig.voteWindowMs,
                 snap.round,
             );
         }
@@ -841,24 +736,15 @@ export class Node extends EventEmitter {
         });
 
         if (this.game.phase === 'finished' && this.game.result) {
-            clearTimeout(this._voteTimer);
-            clearTimeout(this._moveTimeoutTimer);
-            this._voteTimer        = undefined;
-            this._moveTimeoutTimer = undefined;
-            this._voting           = null;
-            this.emit('game:over', {
-                gameId:    this.game.gameId,
-                result:    this.game.result,
-                lastFen:   this.game.fen,
-                moveCount: this.game.moveHistory.length,
-            });
+            this.endGame();
             return false;
         }
         return true;
     }
 
     private teamOf(publicKey: string): Team | null {
-        if (this.roster.has(publicKey))        return this.roster.get(publicKey)!;
+        const inGame = this.roster.teamOf(publicKey);
+        if (inGame)                                return inGame;
         if (publicKey === this.identity.publicKey) return this.game.myTeam;
         return this.allPeers.get(publicKey)?.team ?? null;
     }
@@ -871,23 +757,32 @@ export class Node extends EventEmitter {
     private stopOutOfSync(reason: string, peerKey: string): void {
         logger.error(`Out of sync with a peer, stopping the game`, { peer: peerKey.slice(0, 8), reason });
 
-        this.game.finish({ winner: null, reason: 'desync' });
-        if (this._resignVote) {
-            clearTimeout(this._resignVote.timer);
-            this._resignVote = null;
-        }
+        this.endGame({ result: { winner: null, reason: 'desync' } });
+    }
+
+    /**
+     * Ends the game: stops the timers, drops any open vote, and tells the UI.
+     * `announce` also tells the other players, for endings they can't see
+     * for themselves: a draw, a timeout, a resignation. `result` is left out
+     * when the engine already ended the game (checkmate, stalemate).
+     */
+    private endGame({ result, announce = false }: { result?: GameResult; announce?: boolean } = {}): void {
+        if (result) this.game.finish(result);
         clearTimeout(this._voteTimer);
         clearTimeout(this._moveTimeoutTimer);
         this._voteTimer        = undefined;
         this._moveTimeoutTimer = undefined;
         this._voting           = null;
+        this.closeResignVote();
 
-        this.emit('game:over', {
+        const over = {
             gameId:    this.game.gameId,
             result:    this.game.result!,
             lastFen:   this.game.fen,
             moveCount: this.game.moveHistory.length,
-        });
+        };
+        if (announce) this.net?.broadcastGameOver(over.gameId, over.result, over.lastFen, over.moveCount);
+        this.emit('game:over', over);
     }
 
     private applyTally(result: TallyResult): void {
@@ -948,14 +843,7 @@ export class Node extends EventEmitter {
 
         // Check for game end
         if (this.game.phase === 'finished' && this.game.result) {
-            clearTimeout(this._moveTimeoutTimer);
-            this._moveTimeoutTimer = undefined;
-            this.emit('game:over', {
-                gameId:    this.game.gameId,
-                result:    this.game.result,
-                lastFen:   this.game.fen,
-                moveCount: this.game.moveHistory.length,
-            });
+            this.endGame();
             return;
         }
 
@@ -967,23 +855,14 @@ export class Node extends EventEmitter {
     private maybeRevote(): void {
         if (!this._voting) return;
 
-        if (this._voting.revoteCount >= this._gameConfig.maxRevotes) {
+        if (this._voting.revoteCount >= this.gameConfig.maxRevotes) {
             logger.warn(`Max revotes exceeded — abandoning game`);
-            this.game.finish({ winner: null, reason: 'revotes_exhausted' });
-            this._voting    = null;
-            clearTimeout(this._voteTimer);
-            this._voteTimer = undefined;
-            this.emit('game:over', {
-                gameId:    this.game.gameId,
-                result:    this.game.result!,
-                lastFen:   this.game.fen,
-                moveCount: this.game.moveHistory.length,
-            });
+            this.endGame({ result: { winner: null, reason: 'revotes_exhausted' } });
             return;
         }
 
         const prevWindowCloseAt = this._voting.windowCloseAt;
-        const newWindowCloseAt  = prevWindowCloseAt + VOTE_CONFIG.VOTE_GRACE_MS + this._gameConfig.voteWindowMs;
+        const newWindowCloseAt  = prevWindowCloseAt + VOTE_CONFIG.VOTE_GRACE_MS + this.gameConfig.voteWindowMs;
         this._voting.openRevote(newWindowCloseAt);
 
         const delay = Math.max(0, newWindowCloseAt + VOTE_CONFIG.VOTE_GRACE_MS - this.getSynchronizedTime());
@@ -998,7 +877,7 @@ export class Node extends EventEmitter {
             turnIndex:     this._voting.turnIndex,
             revoteCount:   this._voting.revoteCount,
             windowCloseAt: newWindowCloseAt,
-            voteWindowMs:  this._gameConfig.voteWindowMs,
+            voteWindowMs:  this.gameConfig.voteWindowMs,
         });
     }
 
@@ -1040,38 +919,22 @@ export class Node extends EventEmitter {
         this.scheduleGameBegin(theirStart);
     }
 
-    /** Lowest public key among us and our peers. It picks the gameId and start time. */
-    private masterKey(): string {
-        return this.connectedPlayers().sort()[0];
+    // Roster: who's in the game, who among them is master, and whether
+    // enough of them are connected to count votes.
+
+    /** Us and everyone we're connected to. */
+    private connected(): string[] {
+        return [this.identity.publicKey, ...this.allPeers.keys()];
     }
 
-    // Roster
-    //
-    // Who is in this game, fixed when the countdown starts. Before, "the game"
-    // meant "whoever is connected right now", so a new app appearing on the
-    // LAN mid-game joined the peer list and could even become master.
-
-    /** Everyone in the game (us included) who is currently connected. Outside a game, everyone connected. */
-    private connectedPlayers(): string[] {
-        const connected = [this.identity.publicKey, ...this.allPeers.keys()];
-        return this.roster.size ? connected.filter(k => this.roster.has(k)) : connected;
-    }
-
-    /**
-     * Votes are only counted while more than half the players are connected.
-     * Without this a player who drops out is alone, counts as master, and
-     * keeps playing a game of their own that can't be merged back.
-     */
-    private hasQuorum(): boolean {
-        return this.roster.size === 0 || this.connectedPlayers().length * 2 > this.roster.size;
-    }
+    private masterKey(): string { return this.roster.master(this.connected()); }
+    private hasQuorum(): boolean { return this.roster.hasQuorum(this.connected()); }
 
     private recordRoster(): void {
-        this.roster.clear();
-        this.roster.set(this.identity.publicKey, this.game.myTeam!);
-        for (const [key, peer] of this.allPeers) {
-            if (peer.team) this.roster.set(key, peer.team);
-        }
+        this.roster.record([
+            [this.identity.publicKey, this.game.myTeam],
+            ...[...this.allPeers].map(([key, peer]) => [key, peer.team] as [string, Team | null]),
+        ]);
     }
 
     /** Players and sides as this node sees them, and whether others can still join. */
@@ -1089,7 +952,7 @@ export class Node extends EventEmitter {
     /** No key: could anyone connect now? With a key: may this peer connect? */
     private acceptsConnection(peerKey?: string): boolean {
         if (this.state.acceptingConnection) return true;          // lobby open
-        return peerKey === undefined ? this.roster.size > 0      // a player might be coming back
+        return peerKey === undefined ? this.roster.inGame        // a player might be coming back
                                      : this.roster.has(peerKey);
     }
 
@@ -1146,34 +1009,12 @@ export class Node extends EventEmitter {
         }
 
         const result = msg.result as GameResult;
-        this.game.finish({ winner: result.winner, reason: result.reason });
-
-        // Clear resign vote if one was open
-        if (this._resignVote) {
-            clearTimeout(this._resignVote.timer);
-            this._resignVote = null;
-        }
-
-        clearTimeout(this._voteTimer);
-        clearTimeout(this._moveTimeoutTimer);
-        this._voteTimer        = undefined;
-        this._moveTimeoutTimer = undefined;
-        this._voting           = null;
-
         logger.info(`Game over from peer`, {
             sender: senderKey.slice(0, 8),
             winner: result.winner,
             reason: result.reason,
         });
-
-        // Push the game-over event to the renderer — without this the receiving
-        // side's screen never transitions away from GameScreen.
-        this.emit('game:over', {
-            gameId:    this.game.gameId,
-            result:    this.game.result!,
-            lastFen:   this.game.fen,
-            moveCount: this.game.moveHistory.length,
-        });
+        this.endGame({ result: { winner: result.winner, reason: result.reason } });
     }
 
     // Resign helpers
@@ -1188,39 +1029,36 @@ export class Node extends EventEmitter {
         return count;
     }
 
+    /** Opens our side's resign vote and tells the UI. It lapses after the configured window. */
+    private openResignVote(): ResignVote {
+        const vote = new ResignVote(this.gameConfig.resignWindowMs, () => {
+            this.resignVote = null;
+            this.emit('resign:vote_expired', {});
+            logger.info(`Resign vote expired`);
+        });
+        this.resignVote = vote;
+        this.emit('resign:vote_started', { expiresAt: vote.expiresAt });
+        return vote;
+    }
+
+    private closeResignVote(): void {
+        this.resignVote?.cancel();
+        this.resignVote = null;
+    }
+
     private checkResignThreshold(): void {
-        if (!this._resignVote || this.game.phase !== 'in_progress') return;
-        const teamSize = this.connectedTeamSize();
-        const yesVotes = this._resignVote.yesVoters.size;
-        if (teamSize > 0 && yesVotes / teamSize >= this._gameConfig.resignThreshold) {
-            clearTimeout(this._resignVote.timer);
-            this._resignVote = null;
-            this._executeResign();
+        if (!this.resignVote || this.game.phase !== 'in_progress') return;
+        if (this.resignVote.passes(this.connectedTeamSize(), this.gameConfig.resignThreshold)) {
+            this.closeResignVote();
+            this.resignOurSide();
         }
     }
 
-    private _executeResign(): void {
+    /** Our side voted to resign. */
+    private resignOurSide(): void {
         if (this.game.phase !== 'in_progress') return;
-        const myTeam = this.game.myTeam!;
-        const winner = myTeam === 'white' ? 'black' : 'white';
-        this.game.finish({ winner, reason: 'resignation' });
-
-        clearTimeout(this._voteTimer);
-        clearTimeout(this._moveTimeoutTimer);
-        this._voteTimer        = undefined;
-        this._moveTimeoutTimer = undefined;
-        this._voting           = null;
-
-        this.net?.broadcastGameOver(
-            this.game.gameId, { winner, reason: 'resignation' }, this.game.fen, this.game.moveHistory.length,
-        );
-
-        this.emit('game:over', {
-            gameId:    this.game.gameId,
-            result:    this.game.result!,
-            lastFen:   this.game.fen,
-            moveCount: this.game.moveHistory.length,
-        });
+        const winner = this.game.myTeam === 'white' ? 'black' : 'white';
+        this.endGame({ result: { winner, reason: 'resignation' }, announce: true });
     }
 
     public castResignVote(): string {
@@ -1229,38 +1067,27 @@ export class Node extends EventEmitter {
         if (!myTeam) return 'error:no_team';
 
         // Start a new vote window if none is active
-        if (!this._resignVote) {
-            const expiresAt = Date.now() + this._gameConfig.resignWindowMs;
-            const timer = setTimeout(() => {
-                this._resignVote = null;
-                this.emit('resign:vote_expired', {});
-                logger.info(`Resign vote expired`);
-            }, this._gameConfig.resignWindowMs);
-            timer.unref();
-            this._resignVote = { yesVoters: new Set(), expiresAt, timer };
-            this.emit('resign:vote_started', { expiresAt });
-            logger.info(`Resign vote started`, { expiresAt });
+        if (!this.resignVote) {
+            const vote = this.openResignVote();
+            logger.info(`Resign vote started`, { expiresAt: vote.expiresAt });
         }
+        const vote = this.resignVote!;
 
         // Deduplicate — self can only vote once
-        if (this._resignVote.yesVoters.has(this.identity.publicKey)) {
-            return 'error:already_voted';
-        }
-
-        this._resignVote.yesVoters.add(this.identity.publicKey);
+        if (!vote.add(this.identity.publicKey)) return 'error:already_voted';
 
         // Send only to alive teammates (opponent never sees this)
         this.net?.broadcastResignVoteToTeam(myTeam);
 
         this.emit('resign:vote_updated', {
-            yesVotes:         this._resignVote.yesVoters.size,
+            yesVotes:         vote.yesVotes,
             connectedTeamSize: this.connectedTeamSize(),
         });
 
         logger.info(`Resign vote cast`, {
-            yesVotes:  this._resignVote.yesVoters.size,
+            yesVotes:  vote.yesVotes,
             teamSize:  this.connectedTeamSize(),
-            threshold: this._gameConfig.resignThreshold,
+            threshold: this.gameConfig.resignThreshold,
         });
 
         this.checkResignThreshold();
@@ -1299,10 +1126,7 @@ export class Node extends EventEmitter {
         this._voteTimer          = undefined;
         this._moveTimeoutTimer   = undefined;
 
-        if (this._resignVote) {
-            clearTimeout(this._resignVote.timer);
-            this._resignVote = null;
-        }
+        this.closeResignVote();
 
         this.game.reset();
         this.roster.clear();
@@ -1310,10 +1134,7 @@ export class Node extends EventEmitter {
         this._resyncGraceUntil = 0;
         this._voting    = null;
 
-        this._gameConfig                = { ...DEFAULT_GAME_CONFIG };
-        this._configVersion             = 0;
-        this._selfAcceptedConfigVersion = 0;
-        this._peerAcceptedVersions.clear();
+        this.configHandshake.reset();
 
         this.state.acceptingConnection = true;
 
@@ -1332,10 +1153,7 @@ export class Node extends EventEmitter {
         clearTimeout(this.gameStartTimeout);
         clearTimeout(this._voteTimer);
         clearTimeout(this._moveTimeoutTimer);
-        if (this._resignVote) {
-            clearTimeout(this._resignVote.timer);
-            this._resignVote = null;
-        }
+        this.closeResignVote();
         this.stopped = true;
         this.net?.stop();
         this.state.peers.clear();
@@ -1348,7 +1166,7 @@ export class Node extends EventEmitter {
 
         // Mid-game, only players from this game may join. Discovery still
         // dials any app it finds on the network; those connections end here.
-        const inGame = this.roster.size > 0;
+        const inGame = this.roster.inGame;
         if (inGame && !this.roster.has(key)) {
             logger.info(`Connection from outside this game closed`, { peer: key.slice(0, 8) });
             peer.connection.close();
@@ -1369,11 +1187,10 @@ export class Node extends EventEmitter {
             this.state.peers.set(key, peer);
             this.state.alivePeersCount++;
         }
-        this.state.lastConnectionMs = Date.now();
 
         if (inGame) {
             // A new connection starts blank. The roster remembers who they are.
-            peer.team  = this.roster.get(key)!;
+            peer.team  = this.roster.teamOf(key)!;
             peer.ready = true;
         }
 
@@ -1402,7 +1219,7 @@ export class Node extends EventEmitter {
             this.net.sendSideChoiceToPeer(this.game.myTeam, peer);
         }
         if (this.net) {
-            this.net.sendConfigProposalToPeer(this._gameConfig, this._configVersion, peer);
+            this.net.sendConfigProposalToPeer(this.gameConfig, this.configVersion, peer);
         }
     }
 
