@@ -6,7 +6,7 @@ import { getOrCreateIdentity }     from "../protocol/generateidentity.js";
 import { GAME_CONFIG, VOTE_CONFIG } from "../utils/config.js";
 import { logger }                  from "../utils/logger.js";
 import { GameState, checkTeamBalance, Team, GameResult } from "../game/game-state.js";
-import { VotingState, GameConfig, TallyResult, tallyMoves } from "../game/voting-state.js";
+import { VotingState, GameConfig, TallyResult, tallyMoves, type SignedVote } from "../game/voting-state.js";
 import { verifyTally, checkVote, TallyClaim } from "../game/verify-tally.js";
 import type { GameSnapshot } from "../game/snapshot.js";
 import { MessageCallbacks }        from "../network/message-service.js";
@@ -15,12 +15,6 @@ import { Roster }                  from "./roster.js";
 import { ResignVote }              from "./resign-vote.js";
 import { randomUUID }              from "crypto";
 import { EventEmitter }            from "events";
-import { join }                    from "node:path";
-import { homedir }                 from "node:os";
-
-function defaultIdentityPath(): string {
-    return join(homedir(), '.chess-democracy', 'identity.pem');
-}
 
 // ---------------------------------------------------------------------------
 // Internal node state
@@ -30,7 +24,6 @@ interface NodeState {
     alivePeersCount:     number;
     acceptingConnection: boolean;
     timeOffset:          number;
-    lastConnectionMs:    number;
 }
 
 export class Node extends EventEmitter {
@@ -43,7 +36,6 @@ export class Node extends EventEmitter {
         alivePeersCount:     0,
         acceptingConnection: true,
         timeOffset:          0,
-        lastConnectionMs:    Date.now(),
     };
 
     // Game state
@@ -91,8 +83,8 @@ export class Node extends EventEmitter {
         private readonly createNetwork: NetworkFactory = LocalNetworkController.create,
     ) {
         super();
-        // TODO(production): always load from identityPath / defaultIdentityPath()
-        // this.identity = loadOrCreateIdentity(identityPath ?? defaultIdentityPath());
+        // The app always passes a path. Without one the key is fresh every
+        // run, which is what tests and the headless CLI want.
         this.identity = identityPath
             ? loadOrCreateIdentity(identityPath)
             : getOrCreateIdentity(); // ephemeral — fresh key every run
@@ -215,145 +207,23 @@ export class Node extends EventEmitter {
     // Boot
 
     boot(port: number): void {
-        this.state.lastConnectionMs = Date.now();
-
+        // Each message a peer can send, and what handles it.
         const callbacks: MessageCallbacks = {
-            setTimeOffset: (offset) => this.setTimeOffset(offset),
-            onGameStart:   (msg, senderKey) => this.handleGameStart(msg, senderKey),
-            onGameOver:    (msg, senderKey) => this.handleGameOver(msg, senderKey),
-
-            onSideChoice: (senderKey, team) => {
-                this.emit('peer:team_updated', { peerId: senderKey, team });
-            },
-            onReady: (senderKey) => {
-                this.emit('peer:ready_changed', { peerId: senderKey, ready: true });
-            },
-            onUnready: (senderKey) => {
-                this.emit('peer:ready_changed', { peerId: senderKey, ready: false });
-            },
-
-            onConfigProposal: (senderKey, config, version) => {
-                const outcome = this.configHandshake.receiveProposal(senderKey, config, version);
-                if (outcome.kind === 'stale') {
-                    logger.debug(`Stale config_proposal ignored`, { version, current: this.configHandshake.version });
-                    return;
-                }
-                if (outcome.kind === 'invalid') {
-                    logger.warn(`Invalid config_proposal rejected`, { senderKey: senderKey.slice(0, 8), config, version });
-                    return;
-                }
-
-                if (outcome.kind === 'matched') {
-                    // Already on this exact config — auto-accept and reply
-                    this.net?.broadcastConfigAccept(version);
-                    logger.debug(`Auto-accepted matching config_proposal`, { version });
-                } else {
-                    this.emit('config:updated', {
-                        voteWindowMs: config.voteWindowMs,
-                        maxRevotes:   config.maxRevotes,
-                        version,
-                        proposerKey:  senderKey,
-                    });
-                }
-                // config:updated resets the UI's list to just the proposer.
-                for (const peerId of outcome.earlyAccepts) {
-                    this.emit('config:peer_accepted', { peerId, version });
-                }
-            },
-
-            onConfigAccept: (senderKey, version) => {
-                if (this.configHandshake.receiveAccept(senderKey, version) !== 'counted') return;
-                logger.info(`Peer accepted config`, { peer: senderKey.slice(0, 8), version });
-                this.emit('config:peer_accepted', { peerId: senderKey, version });
-            },
-
-            onDrawOffer: (senderKey) => {
-                if (this.game.phase !== 'in_progress') return;
-                const team = this.teamOf(senderKey);
-                if (!team) return;
-                this._drawOfferedBy = team;
-                // Teammates see the offer too, but only the other side may answer it.
-                this.emit('draw:offered', { from: senderKey, fromSelf: false, byOpponent: team !== this.game.myTeam });
-            },
-
-            onDrawResponse: (senderKey, accepted) => {
-                // accepted=true path: accepter already broadcast game_over; handleGameOver handles it.
-                // declined path: let offeror know via the draw:declined event.
-                if (!accepted) {
-                    this._drawOfferedBy = null;
-                    this.emit('draw:declined', { by: senderKey });
-                }
-            },
-
-            onTallyResult:  (senderKey, claim)    => this.handleTallyResult(senderKey, claim),
-            onGameSnapshot: (senderKey, snapshot) => this.handleGameSnapshot(senderKey, snapshot),
-
-            onVote: (senderKey, turnIndex, round, move, _timestamp, signed) => {
-                if (!this._voting || this._voting.turnIndex !== turnIndex || this._voting.round !== round) {
-                    logger.warn(`Vote for wrong/inactive window`, {
-                        turnIndex,
-                        round,
-                        activeTurn:  this._voting?.turnIndex,
-                        activeRound: this._voting?.round,
-                    });
-                    return;
-                }
-
-                // castVote() checks both of these for our own votes. A peer's
-                // vote arrives here without either, so check them again.
-                const senderTeam = this.allPeers.get(senderKey)?.team ?? null;
-                if (senderTeam !== this.game.currentTurn) {
-                    logger.warn(`Vote from a player not on the side to move`, {
-                        peer: senderKey.slice(0, 8),
-                        senderTeam,
-                        turn: this.game.currentTurn,
-                    });
-                    return;
-                }
-                if (!this.game.legalMoves.includes(move)) {
-                    logger.warn(`Illegal move in peer vote`, { peer: senderKey.slice(0, 8), move });
-                    return;
-                }
-
-                const result = this._voting.castVote(senderKey, move, this.getSynchronizedTime(), signed);
-                if (result === 'ok') {
-                    logger.info(`Peer vote recorded`, { peer: senderKey.slice(0, 8), move, turnIndex });
-                    this.emit('vote:received', { peerId: senderKey, turnIndex, move });
-                } else {
-                    logger.warn(`Peer vote rejected`, { peer: senderKey.slice(0, 8), reason: result });
-                }
-            },
-
-            onResignVote: (senderKey) => {
-                if (this.game.phase !== 'in_progress') return;
-
-                // Resigning is a team decision. SendResignVote only targets
-                // teammates, but that's the sender being polite, not a check.
-                const senderTeam = this.allPeers.get(senderKey)?.team ?? null;
-                if (!this.game.myTeam || senderTeam !== this.game.myTeam) {
-                    logger.warn(`Resign vote from a non-teammate ignored`, {
-                        peer: senderKey.slice(0, 8),
-                        senderTeam,
-                    });
-                    return;
-                }
-
-                // A teammate started a resign vote we don't know about yet —
-                // open a local window so our renderer shows the banner too.
-                if (!this.resignVote) {
-                    this.openResignVote();
-                    logger.info(`Resign vote window opened by teammate`, { peer: senderKey.slice(0, 8) });
-                }
-                const vote = this.resignVote!;
-
-                if (!vote.add(senderKey)) return; // duplicate
-                this.emit('resign:vote_updated', {
-                    yesVotes:          vote.yesVotes,
-                    connectedTeamSize: this.connectedTeamSize(),
-                });
-                logger.info(`Resign vote received from peer`, { peer: senderKey.slice(0, 8) });
-                this.checkResignThreshold();
-            },
+            setTimeOffset:    (offset)                       => this.setTimeOffset(offset),
+            onGameStart:      (msg, senderKey)               => this.handleGameStart(msg, senderKey),
+            onGameOver:       (msg, senderKey)               => this.handleGameOver(msg, senderKey),
+            onSideChoice:     (senderKey, team)              => this.emit('peer:team_updated', { peerId: senderKey, team }),
+            onReady:          (senderKey)                    => this.emit('peer:ready_changed', { peerId: senderKey, ready: true }),
+            onUnready:        (senderKey)                    => this.emit('peer:ready_changed', { peerId: senderKey, ready: false }),
+            onConfigProposal: (senderKey, config, version)   => this.handleConfigProposal(senderKey, config, version),
+            onConfigAccept:   (senderKey, version)           => this.handleConfigAccept(senderKey, version),
+            onDrawOffer:      (senderKey)                    => this.handleDrawOffer(senderKey),
+            onDrawResponse:   (senderKey, accepted)          => this.handleDrawResponse(senderKey, accepted),
+            onTallyResult:    (senderKey, claim)             => this.handleTallyResult(senderKey, claim),
+            onGameSnapshot:   (senderKey, snapshot)          => this.handleGameSnapshot(senderKey, snapshot),
+            onVote:           (senderKey, turnIndex, round, move, _timestamp, signed) =>
+                                                                this.handleVote(senderKey, turnIndex, round, move, signed),
+            onResignVote:     (senderKey)                    => this.handleResignVote(senderKey),
         };
 
         this.createNetwork({
@@ -379,6 +249,128 @@ export class Node extends EventEmitter {
         }).catch((err: unknown) => {
             logger.error(`Network failed to start`, { message: err instanceof Error ? err.message : String(err) });
         });
+    }
+
+    // Messages from peers
+
+    private handleConfigProposal(senderKey: string, config: GameConfig, version: number): void {
+        const outcome = this.configHandshake.receiveProposal(senderKey, config, version);
+        if (outcome.kind === 'stale') {
+            logger.debug(`Stale config_proposal ignored`, { version, current: this.configHandshake.version });
+            return;
+        }
+        if (outcome.kind === 'invalid') {
+            logger.warn(`Invalid config_proposal rejected`, { senderKey: senderKey.slice(0, 8), config, version });
+            return;
+        }
+
+        if (outcome.kind === 'matched') {
+            // Already on this exact config — auto-accept and reply
+            this.net?.broadcastConfigAccept(version);
+            logger.debug(`Auto-accepted matching config_proposal`, { version });
+        } else {
+            this.emit('config:updated', {
+                voteWindowMs: config.voteWindowMs,
+                maxRevotes:   config.maxRevotes,
+                version,
+                proposerKey:  senderKey,
+            });
+        }
+        // config:updated resets the UI's list to just the proposer.
+        for (const peerId of outcome.earlyAccepts) {
+            this.emit('config:peer_accepted', { peerId, version });
+        }
+    }
+
+    private handleConfigAccept(senderKey: string, version: number): void {
+        if (this.configHandshake.receiveAccept(senderKey, version) !== 'counted') return;
+        logger.info(`Peer accepted config`, { peer: senderKey.slice(0, 8), version });
+        this.emit('config:peer_accepted', { peerId: senderKey, version });
+    }
+
+    private handleDrawOffer(senderKey: string): void {
+        if (this.game.phase !== 'in_progress') return;
+        const team = this.teamOf(senderKey);
+        if (!team) return;
+        this._drawOfferedBy = team;
+        // Teammates see the offer too, but only the other side may answer it.
+        this.emit('draw:offered', { from: senderKey, fromSelf: false, byOpponent: team !== this.game.myTeam });
+    }
+
+    private handleDrawResponse(senderKey: string, accepted: boolean): void {
+        // accepted=true path: accepter already broadcast game_over; handleGameOver handles it.
+        // declined path: let offeror know via the draw:declined event.
+        if (!accepted) {
+            this._drawOfferedBy = null;
+            this.emit('draw:declined', { by: senderKey });
+        }
+    }
+
+    private handleVote(senderKey: string, turnIndex: number, round: number, move: string, signed: SignedVote): void {
+        if (!this._voting || this._voting.turnIndex !== turnIndex || this._voting.round !== round) {
+            logger.warn(`Vote for wrong/inactive window`, {
+                turnIndex,
+                round,
+                activeTurn:  this._voting?.turnIndex,
+                activeRound: this._voting?.round,
+            });
+            return;
+        }
+
+        // castVote() checks both of these for our own votes. A peer's
+        // vote arrives here without either, so check them again.
+        const senderTeam = this.allPeers.get(senderKey)?.team ?? null;
+        if (senderTeam !== this.game.currentTurn) {
+            logger.warn(`Vote from a player not on the side to move`, {
+                peer: senderKey.slice(0, 8),
+                senderTeam,
+                turn: this.game.currentTurn,
+            });
+            return;
+        }
+        if (!this.game.legalMoves.includes(move)) {
+            logger.warn(`Illegal move in peer vote`, { peer: senderKey.slice(0, 8), move });
+            return;
+        }
+
+        const result = this._voting.castVote(senderKey, move, this.getSynchronizedTime(), signed);
+        if (result === 'ok') {
+            logger.info(`Peer vote recorded`, { peer: senderKey.slice(0, 8), move, turnIndex });
+            this.emit('vote:received', { peerId: senderKey, turnIndex, move });
+        } else {
+            logger.warn(`Peer vote rejected`, { peer: senderKey.slice(0, 8), reason: result });
+        }
+    }
+
+    private handleResignVote(senderKey: string): void {
+        if (this.game.phase !== 'in_progress') return;
+
+        // Resigning is a team decision. SendResignVote only targets
+        // teammates, but that's the sender being polite, not a check.
+        const senderTeam = this.allPeers.get(senderKey)?.team ?? null;
+        if (!this.game.myTeam || senderTeam !== this.game.myTeam) {
+            logger.warn(`Resign vote from a non-teammate ignored`, {
+                peer: senderKey.slice(0, 8),
+                senderTeam,
+            });
+            return;
+        }
+
+        // A teammate started a resign vote we don't know about yet —
+        // open a local window so our renderer shows the banner too.
+        if (!this.resignVote) {
+            this.openResignVote();
+            logger.info(`Resign vote window opened by teammate`, { peer: senderKey.slice(0, 8) });
+        }
+        const vote = this.resignVote!;
+
+        if (!vote.add(senderKey)) return; // duplicate
+        this.emit('resign:vote_updated', {
+            yesVotes:          vote.yesVotes,
+            connectedTeamSize: this.connectedTeamSize(),
+        });
+        logger.info(`Resign vote received from peer`, { peer: senderKey.slice(0, 8) });
+        this.checkResignThreshold();
     }
 
     // Ready phase
@@ -1195,7 +1187,6 @@ export class Node extends EventEmitter {
             this.state.peers.set(key, peer);
             this.state.alivePeersCount++;
         }
-        this.state.lastConnectionMs = Date.now();
 
         if (inGame) {
             // A new connection starts blank. The roster remembers who they are.
