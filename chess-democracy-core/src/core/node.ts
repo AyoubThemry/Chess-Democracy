@@ -197,21 +197,7 @@ export class Node extends EventEmitter {
         }
         this._drawOfferedBy = null;
         if (accept) {
-            this.game.finish({ winner: 'draw', reason: 'draw_agreement' });
-            clearTimeout(this._voteTimer);
-            clearTimeout(this._moveTimeoutTimer);
-            this._voteTimer          = undefined;
-            this._moveTimeoutTimer   = undefined;
-            this._voting             = null;
-            this.net?.broadcastGameOver(
-                this.game.gameId, this.game.result!, this.game.fen, this.game.moveHistory.length,
-            );
-            this.emit('game:over', {
-                gameId:    this.game.gameId,
-                result:    this.game.result!,
-                lastFen:   this.game.fen,
-                moveCount: this.game.moveHistory.length,
-            });
+            this.endGame({ result: { winner: 'draw', reason: 'draw_agreement' }, announce: true });
         } else {
             this.net?.broadcastDrawResponse(false);
             this.emit('draw:declined', { by: this.identity.publicKey });
@@ -543,19 +529,7 @@ export class Node extends EventEmitter {
         this._moveTimeoutTimer = setTimeout(() => {
             if (this.game.phase !== 'in_progress') return;
             logger.warn(`Move timeout on turn ${turnIndex} — ending game`);
-            this.game.finish({ winner: null, reason: 'timeout' });
-            clearTimeout(this._voteTimer);
-            this._voteTimer = undefined;
-            this._voting    = null;
-            this.net?.broadcastGameOver(
-                this.game.gameId, this.game.result!, this.game.fen, this.game.moveHistory.length,
-            );
-            this.emit('game:over', {
-                gameId:    this.game.gameId,
-                result:    this.game.result!,
-                lastFen:   this.game.fen,
-                moveCount: this.game.moveHistory.length,
-            });
+            this.endGame({ result: { winner: null, reason: 'timeout' }, announce: true });
         }, GAME_CONFIG.MOVE_TIMEOUT_MS);
 
         logger.info(`Vote window opened`, {
@@ -770,17 +744,7 @@ export class Node extends EventEmitter {
         });
 
         if (this.game.phase === 'finished' && this.game.result) {
-            clearTimeout(this._voteTimer);
-            clearTimeout(this._moveTimeoutTimer);
-            this._voteTimer        = undefined;
-            this._moveTimeoutTimer = undefined;
-            this._voting           = null;
-            this.emit('game:over', {
-                gameId:    this.game.gameId,
-                result:    this.game.result,
-                lastFen:   this.game.fen,
-                moveCount: this.game.moveHistory.length,
-            });
+            this.endGame();
             return false;
         }
         return true;
@@ -801,20 +765,32 @@ export class Node extends EventEmitter {
     private stopOutOfSync(reason: string, peerKey: string): void {
         logger.error(`Out of sync with a peer, stopping the game`, { peer: peerKey.slice(0, 8), reason });
 
-        this.game.finish({ winner: null, reason: 'desync' });
-        this.closeResignVote();
+        this.endGame({ result: { winner: null, reason: 'desync' } });
+    }
+
+    /**
+     * Ends the game: stops the timers, drops any open vote, and tells the UI.
+     * `announce` also tells the other players, for endings they can't see
+     * for themselves: a draw, a timeout, a resignation. `result` is left out
+     * when the engine already ended the game (checkmate, stalemate).
+     */
+    private endGame({ result, announce = false }: { result?: GameResult; announce?: boolean } = {}): void {
+        if (result) this.game.finish(result);
         clearTimeout(this._voteTimer);
         clearTimeout(this._moveTimeoutTimer);
         this._voteTimer        = undefined;
         this._moveTimeoutTimer = undefined;
         this._voting           = null;
+        this.closeResignVote();
 
-        this.emit('game:over', {
+        const over = {
             gameId:    this.game.gameId,
             result:    this.game.result!,
             lastFen:   this.game.fen,
             moveCount: this.game.moveHistory.length,
-        });
+        };
+        if (announce) this.net?.broadcastGameOver(over.gameId, over.result, over.lastFen, over.moveCount);
+        this.emit('game:over', over);
     }
 
     private applyTally(result: TallyResult): void {
@@ -875,14 +851,7 @@ export class Node extends EventEmitter {
 
         // Check for game end
         if (this.game.phase === 'finished' && this.game.result) {
-            clearTimeout(this._moveTimeoutTimer);
-            this._moveTimeoutTimer = undefined;
-            this.emit('game:over', {
-                gameId:    this.game.gameId,
-                result:    this.game.result,
-                lastFen:   this.game.fen,
-                moveCount: this.game.moveHistory.length,
-            });
+            this.endGame();
             return;
         }
 
@@ -896,16 +865,7 @@ export class Node extends EventEmitter {
 
         if (this._voting.revoteCount >= this.gameConfig.maxRevotes) {
             logger.warn(`Max revotes exceeded — abandoning game`);
-            this.game.finish({ winner: null, reason: 'revotes_exhausted' });
-            this._voting    = null;
-            clearTimeout(this._voteTimer);
-            this._voteTimer = undefined;
-            this.emit('game:over', {
-                gameId:    this.game.gameId,
-                result:    this.game.result!,
-                lastFen:   this.game.fen,
-                moveCount: this.game.moveHistory.length,
-            });
+            this.endGame({ result: { winner: null, reason: 'revotes_exhausted' } });
             return;
         }
 
@@ -1057,31 +1017,12 @@ export class Node extends EventEmitter {
         }
 
         const result = msg.result as GameResult;
-        this.game.finish({ winner: result.winner, reason: result.reason });
-
-        // Clear resign vote if one was open
-        this.closeResignVote();
-
-        clearTimeout(this._voteTimer);
-        clearTimeout(this._moveTimeoutTimer);
-        this._voteTimer        = undefined;
-        this._moveTimeoutTimer = undefined;
-        this._voting           = null;
-
         logger.info(`Game over from peer`, {
             sender: senderKey.slice(0, 8),
             winner: result.winner,
             reason: result.reason,
         });
-
-        // Push the game-over event to the renderer — without this the receiving
-        // side's screen never transitions away from GameScreen.
-        this.emit('game:over', {
-            gameId:    this.game.gameId,
-            result:    this.game.result!,
-            lastFen:   this.game.fen,
-            moveCount: this.game.moveHistory.length,
-        });
+        this.endGame({ result: { winner: result.winner, reason: result.reason } });
     }
 
     // Resign helpers
@@ -1117,32 +1058,15 @@ export class Node extends EventEmitter {
         if (!this.resignVote || this.game.phase !== 'in_progress') return;
         if (this.resignVote.passes(this.connectedTeamSize(), this.gameConfig.resignThreshold)) {
             this.closeResignVote();
-            this._executeResign();
+            this.resignOurSide();
         }
     }
 
-    private _executeResign(): void {
+    /** Our side voted to resign. */
+    private resignOurSide(): void {
         if (this.game.phase !== 'in_progress') return;
-        const myTeam = this.game.myTeam!;
-        const winner = myTeam === 'white' ? 'black' : 'white';
-        this.game.finish({ winner, reason: 'resignation' });
-
-        clearTimeout(this._voteTimer);
-        clearTimeout(this._moveTimeoutTimer);
-        this._voteTimer        = undefined;
-        this._moveTimeoutTimer = undefined;
-        this._voting           = null;
-
-        this.net?.broadcastGameOver(
-            this.game.gameId, { winner, reason: 'resignation' }, this.game.fen, this.game.moveHistory.length,
-        );
-
-        this.emit('game:over', {
-            gameId:    this.game.gameId,
-            result:    this.game.result!,
-            lastFen:   this.game.fen,
-            moveCount: this.game.moveHistory.length,
-        });
+        const winner = this.game.myTeam === 'white' ? 'black' : 'white';
+        this.endGame({ result: { winner, reason: 'resignation' }, announce: true });
     }
 
     public castResignVote(): string {
