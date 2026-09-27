@@ -1,6 +1,6 @@
 import type { EventEmitter } from 'events';
 import type { Peer, PeerData } from './peer.js';
-import type { Team } from '../game/game-state.js';
+import type { Team, GameResult } from '../game/game-state.js';
 import type { GameConfig, SignedVote } from '../game/voting-state.js';
 import type { TallyClaim } from '../game/verify-tally.js';
 import type { GameSnapshot } from '../game/snapshot.js';
@@ -24,6 +24,8 @@ export interface GameNetwork extends EventEmitter {
     /** Ask the master for its clock. Returns false if there's nobody to ask. */
     sync(): boolean;
 
+    broadcastGameStart(gameId: string, resolvedTeam: Team, startsAt: number, totalPlayers: number): void;
+    broadcastGameOver(gameId: string, result: GameResult, lastFen: string, moveCount: number): void;
     broadcastReady(team: string): void;
     broadcastUnready(): void;
     broadcastSideChoice(team: Team): void;

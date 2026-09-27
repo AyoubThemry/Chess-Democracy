@@ -9,10 +9,6 @@ import { GameState, checkTeamBalance, Team, GameResult } from "../game/game-stat
 import { VotingState, GameConfig, DEFAULT_GAME_CONFIG, TallyResult, tallyMoves } from "../game/voting-state.js";
 import { verifyTally, checkVote, TallyClaim } from "../game/verify-tally.js";
 import type { GameSnapshot } from "../game/snapshot.js";
-import {
-    sendGameStart,
-    sendGameOver,
-} from "../game/game-protocol.js";
 import { MessageCallbacks }        from "../network/message-service.js";
 import { randomUUID }              from "crypto";
 import { EventEmitter }            from "events";
@@ -234,8 +230,7 @@ export class Node extends EventEmitter {
             this._voteTimer          = undefined;
             this._moveTimeoutTimer   = undefined;
             this._voting             = null;
-            sendGameOver(
-                this.allPeers, this.identity.publicKey, this.identity.privateKey,
+            this.net?.broadcastGameOver(
                 this.game.gameId, this.game.result!, this.game.fen, this.game.moveHistory.length,
             );
             this.emit('game:over', {
@@ -571,15 +566,7 @@ export class Node extends EventEmitter {
         // Non-master starts a provisional countdown and overwrites it when the
         // master's game_start arrives via handleGameStart().
         if (isMaster) {
-            sendGameStart(
-                this.allPeers,
-                this.identity.publicKey,
-                this.identity.privateKey,
-                gameId,
-                myTeam,
-                startsAt,
-                this.allPeers.size + 1,
-            );
+            this.net?.broadcastGameStart(gameId, myTeam, startsAt, this.allPeers.size + 1);
         }
 
         this.recordRoster();
@@ -631,8 +618,7 @@ export class Node extends EventEmitter {
             clearTimeout(this._voteTimer);
             this._voteTimer = undefined;
             this._voting    = null;
-            sendGameOver(
-                this.allPeers, this.identity.publicKey, this.identity.privateKey,
+            this.net?.broadcastGameOver(
                 this.game.gameId, this.game.result!, this.game.fen, this.game.moveHistory.length,
             );
             this.emit('game:over', {
@@ -1225,14 +1211,8 @@ export class Node extends EventEmitter {
         this._moveTimeoutTimer = undefined;
         this._voting           = null;
 
-        sendGameOver(
-            this.allPeers,
-            this.identity.publicKey,
-            this.identity.privateKey,
-            this.game.gameId,
-            { winner, reason: 'resignation' },
-            this.game.fen,
-            this.game.moveHistory.length,
+        this.net?.broadcastGameOver(
+            this.game.gameId, { winner, reason: 'resignation' }, this.game.fen, this.game.moveHistory.length,
         );
 
         this.emit('game:over', {

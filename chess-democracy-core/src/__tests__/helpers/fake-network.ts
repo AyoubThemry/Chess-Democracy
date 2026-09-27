@@ -14,6 +14,7 @@ import type { MessageCallbacks } from '../../network/message-service.js';
 export function fakeNetwork(): GameNetwork {
     return Object.assign(new EventEmitter(), {
         start: vi.fn(), stop: vi.fn(), sync: vi.fn(() => true),
+        broadcastGameStart: vi.fn(), broadcastGameOver: vi.fn(),
         broadcastReady: vi.fn(), broadcastUnready: vi.fn(),
         broadcastSideChoice: vi.fn(), sendSideChoiceToPeer: vi.fn(),
         broadcastConfigProposal: vi.fn(), sendConfigProposalToPeer: vi.fn(),
