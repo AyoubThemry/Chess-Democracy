@@ -7,10 +7,13 @@ import { ipc, bridge } from './bridge';
 import type { NetworkKind, Visibility, PublicGame } from './ipc-types';
 
 export function useChessDemocracy(): void {
-    const store       = useStore();
     const countdownId = useRef<ReturnType<typeof setInterval> | null>(null);
 
     useEffect(() => {
+        // Actions only. Subscribing here would re-render the whole app on
+        // every store change, and state read from this snapshot would go
+        // stale: read it with useStore.getState() when it's needed.
+        const store = useStore.getState();
         const api = ipc();
         if (!api) {
             // Running in browser dev mode without Electron — skip IPC entirely
@@ -134,8 +137,7 @@ export function useChessDemocracy(): void {
         });
 
         const unsubVoteReceived = api.on.voteReceived((data) => {
-            const identity = store.identity;
-            const isSelf   = identity?.publicKey === data.peerId;
+            const isSelf = useStore.getState().identity?.publicKey === data.peerId;
             store.addVote(data.peerId, data.move, isSelf);
         });
 
@@ -218,8 +220,7 @@ export function useChessDemocracy(): void {
             if (countdownId.current) clearInterval(countdownId.current);
         };
 
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []); // mount once only — store actions are stable references
+    }, []); // mount once only
 }
 
 // ── Joining and leaving a network ─────────────────────────────────────────────
