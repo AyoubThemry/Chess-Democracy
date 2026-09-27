@@ -12,6 +12,7 @@ import { leaveNetwork } from '../useChessDemocracy';
 import RoomShare from './RoomShare';
 import RoomReachNote from './RoomReachNote';
 import type { Team } from '../ipc-types';
+import { bridge } from '../bridge';
 import './BootScreen.css';
 import './NetworkScreen.css';
 
@@ -25,7 +26,7 @@ export default function BootScreen() {
         setError(null);
         setLoading(team);
         try {
-            const api = (window as any).chessDemocracy;
+            const api = bridge();
             const res = await api.setTeam(team);
 
             if (!res.ok) {

@@ -1,5 +1,5 @@
 import { LocalNetworkController }  from "../network/localnetwork/local-network-controller.js";
-import type { GameNetwork, NetworkFactory, GameSummary } from "../network/game-network.js";
+import type { GameNetwork, NetworkFactory, GameSummary, RoomReach } from "../network/game-network.js";
 import { Peer, PeerStatus }         from "../network/peer.js";
 import { loadOrCreateIdentity }    from "../protocol/identity-store.js";
 import { getOrCreateIdentity }     from "../protocol/generateidentity.js";
@@ -452,7 +452,7 @@ export class Node extends EventEmitter {
 
             network.on('peer:connected',    (p: Peer) => this.addPeer(p));
             network.on('peer:disconnected', (p: Peer) => this.handlePeerDisconnect(p));
-            network.on('reach',             (r: unknown) => this.emit('network:reach', r));   // internet only
+            network.on('reach',             (r: RoomReach) => this.emit('network:reach', r));
             network.start();
         }).catch((err: unknown) => {
             logger.error(`Network failed to start`, { message: err instanceof Error ? err.message : String(err) });
@@ -526,7 +526,7 @@ export class Node extends EventEmitter {
             { publicKey: this.identity.publicKey, announcedTeam: this.game.myTeam! },
             ...([...peers.values()].map(p => ({
                 publicKey:     p.peerPublicNodeId,
-                announcedTeam: (p.team ?? 'white') as Team,
+                announcedTeam: p.team ?? 'white',
             }))),
         ];
 
@@ -860,7 +860,7 @@ export class Node extends EventEmitter {
     private teamOf(publicKey: string): Team | null {
         if (this.roster.has(publicKey))        return this.roster.get(publicKey)!;
         if (publicKey === this.identity.publicKey) return this.game.myTeam;
-        return (this.allPeers.get(publicKey)?.team ?? null) as Team | null;
+        return this.allPeers.get(publicKey)?.team ?? null;
     }
 
     /**
@@ -1070,7 +1070,7 @@ export class Node extends EventEmitter {
         this.roster.clear();
         this.roster.set(this.identity.publicKey, this.game.myTeam!);
         for (const [key, peer] of this.allPeers) {
-            if (peer.team === 'white' || peer.team === 'black') this.roster.set(key, peer.team);
+            if (peer.team) this.roster.set(key, peer.team);
         }
     }
 

@@ -40,7 +40,7 @@ export abstract class PeerMessaging extends EventEmitter {
         logger.info(`Broadcast game_over`, { gameId: gameId.slice(0, 8), winner: result.winner, reason: result.reason });
     }
 
-    public broadcastReady(team: string): void {
+    public broadcastReady(team: Team): void {
         MessageService.broadcast(
             { type: 'ready', team },
             this.getAllPeers(),

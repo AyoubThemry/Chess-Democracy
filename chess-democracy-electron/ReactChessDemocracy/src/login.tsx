@@ -13,6 +13,7 @@
 
 import { useState } from 'react';
 import { useStore }  from './store';
+import { bridge } from './bridge';
 import './login.css';
 
 type Step = 'pick' | 'confirm';
@@ -27,7 +28,7 @@ export default function LoginScreen() {
 
     const setAuthenticated  = useStore(s => s.setAuthenticated);
 
-    const api = () => (window as any).chessDemocracy;
+    const api = bridge;
 
     async function handleGenerate() {
         setError(null);
@@ -38,8 +39,8 @@ export default function LoginScreen() {
             setPublicKey(res.value.publicKey);
             setIdentityPath(res.value.identityPath);
             setStep('confirm');
-        } catch (e: any) {
-            setError(e?.message ?? 'Unknown error');
+        } catch (e) {
+            setError(e instanceof Error ? e.message : 'Unknown error');
         } finally {
             setLoading(false);
         }
@@ -59,8 +60,8 @@ export default function LoginScreen() {
             setPublicKey(res.value.publicKey);
             setIdentityPath(res.value.identityPath);
             setStep('confirm');
-        } catch (e: any) {
-            setError(e?.message ?? 'Unknown error');
+        } catch (e) {
+            setError(e instanceof Error ? e.message : 'Unknown error');
         } finally {
             setLoading(false);
         }
@@ -76,8 +77,8 @@ export default function LoginScreen() {
             }
             // Just the identity. The network screen comes next.
             setAuthenticated(true);
-        } catch (e: any) {
-            setError(e?.message ?? 'Unknown error');
+        } catch (e) {
+            setError(e instanceof Error ? e.message : 'Unknown error');
         } finally {
             setLoading(false);
         }

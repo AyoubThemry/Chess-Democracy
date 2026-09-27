@@ -14,6 +14,9 @@ import {
     PeerSummary,
     ConfigSnapshot,
     GameConfig,
+    InvokeMap,
+    NetworkKind,
+    Visibility,
 } from './src/ipc-channels';
 
 const isDev = process.env.ELECTRON_DEV === 'true';
@@ -26,54 +29,13 @@ process.on('uncaughtException', (err: Error) => {
     throw err;
 });
 
-// Minimal type surface for the dynamically-imported Node class
-
-interface GameStateInterface {
-    phase:       string;
-    gameId:      string;
-    myTeam:      string | null;
-    currentTurn: string;
-    isMyTurn:    boolean;
-    fen:         string;
-    legalMoves:  string[];
-    moveHistory: Array<{
-        moveIndex: number; move: string; senderKey: string;
-        fenBefore: string; fenAfter: string; timestamp: number;
-    }>;
-    result:      { winner: string | null; reason: string } | null;
-    startsAt:    number | null;
-}
-
-interface PeerInterface {
-    peerPublicNodeId: string;
-    team:             string | null;
-    ready:            boolean;
-    status:           string;
-}
-
-interface NodeInterface {
-    identity:     { publicKey: string };
-    chosenTeam:   string | null;
-    gameState:    GameStateInterface;
-    allPeers:     Map<string, PeerInterface>;
-    gameConfig:   { voteWindowMs: number; maxRevotes: number };
-    configVersion: number;
-    selfAcceptedConfigVersion: number | null;
-    peerAcceptedVersions: Map<string, number>;
-    on(event: string, listener: (...args: any[]) => void): this;
-    boot(port: number): void;
-    setTeam(team: string): boolean;
-    ready(): string;
-    unready(): string;
-    castResignVote(): string;
-    stop(): void;
-    setConfig(voteWindowMs: number, maxRevotes: number, resignThreshold?: number, resignWindowMs?: number): string;
-    acceptConfig(): string;
-    castVote(move: string): string;
-    offerDraw(): string;
-    respondToDraw(accept: boolean): string;
-    reset(): void;
-}
+// The core's own types. Type-only: the core is ESM and loaded with import()
+// below, so none of these imports end up in the compiled main.js.
+type CoreNode     = typeof import('../chess-democracy-core/dist/core/node.js');
+type CoreNetworks = typeof import('../chess-democracy-core/dist/network/networks.js');
+type CoreIdentity = typeof import('../chess-democracy-core/dist/protocol/identity-store.js');
+type CoreLobby    = typeof import('../chess-democracy-core/dist/network/globalnetwork/lobby.js');
+type ChessNode    = InstanceType<CoreNode['Node']>;
 
 // ---
 // Helpers
@@ -150,21 +112,21 @@ function push<T>(channel: string, payload: T): void {
 // Node lifecycle — deferred until identity:start is called
 // ---
 
-let node: NodeInterface | null = null;
+let node: ChessNode | null = null;
 let gameHandlersRegistered = false;
 
 function buildSnapshot(): GameSnapshot {
     const gs = node!.gameState;
     return {
-        phase:       gs.phase       as GameSnapshot['phase'],
+        phase:       gs.phase,
         gameId:      gs.gameId,
-        myTeam:      gs.myTeam      as GameSnapshot['myTeam'],
-        currentTurn: gs.currentTurn as GameSnapshot['currentTurn'],
+        myTeam:      gs.myTeam,
+        currentTurn: gs.currentTurn,
         isMyTurn:    gs.isMyTurn,
         fen:         gs.fen,
         legalMoves:  gs.legalMoves,
         moveHistory: gs.moveHistory,
-        result:      gs.result      as GameSnapshot['result'],
+        result:      gs.result,
         startsAt:    gs.startsAt,
     };
 }
@@ -172,9 +134,9 @@ function buildSnapshot(): GameSnapshot {
 function buildPeerList(): PeerSummary[] {
     return [...node!.allPeers.values()].map(p => ({
         peerId:  p.peerPublicNodeId,
-        team:    p.team   as PeerSummary['team'],
+        team:    p.team,
         ready:   p.ready,
-        status:  p.status as PeerSummary['status'],
+        status:  p.status,
     }));
 }
 
@@ -182,7 +144,7 @@ function buildConfigSnapshot(): ConfigSnapshot {
     const accepted = node!.peerAcceptedVersions;
     const version  = node!.configVersion;
     return {
-        config:          node!.gameConfig as GameConfig,
+        config:          node!.gameConfig,
         version,
         selfAccepted:    node!.selfAcceptedConfigVersion === version,
         peerAcceptedIds: [...node!.allPeers.keys()].filter(k => accepted.get(k) === version),
@@ -281,7 +243,6 @@ function unregisterGameHandlers(): void {
 // with that network's transport and started.
 
 let identityPath: string | null = null;   // chosen at login
-let networkKind:  string | null = null;   // chosen on the network screen
 
 /** Loads a module from the core, in dev or in the packaged app. */
 function coreModule<T>(relative: string): Promise<T> {
@@ -293,26 +254,23 @@ function coreModule<T>(relative: string): Promise<T> {
 
 async function loadIdentity(requestedPath?: string): Promise<{ publicKey: string; identityPath: string }> {
     const resolvedPath = requestedPath ?? defaultIdentityPath();
-    const { loadOrCreateIdentity } = await coreModule<{
-        loadOrCreateIdentity(p: string): { publicKey: string };
-    }>('protocol/identity-store.js');
+    const { loadOrCreateIdentity } = await coreModule<CoreIdentity>('protocol/identity-store.js');
     const { publicKey } = loadOrCreateIdentity(resolvedPath);
     identityPath = resolvedPath;
     return { publicKey, identityPath: resolvedPath };
 }
 
-async function connectNetwork(kind: string, room?: string, visibility?: string): Promise<void> {
+async function connectNetwork(kind: NetworkKind, room?: string, visibility?: Visibility): Promise<void> {
     if (!identityPath) throw new Error('no_identity');
 
     const [{ Node }, { networkFactory }] = await Promise.all([
-        coreModule<{ Node: new (identityPath?: string, createNetwork?: unknown) => NodeInterface }>('core/node.js'),
-        coreModule<{ networkFactory(kind: string, choice?: { room?: string; visibility?: string }): unknown }>('network/networks.js'),
+        coreModule<CoreNode>('core/node.js'),
+        coreModule<CoreNetworks>('network/networks.js'),
     ]);
     const factory = networkFactory(kind, { room, visibility });   // throws if unavailable, or global without a room
 
     stopNode();                             // switching: drop the old network first
     node = new Node(identityPath, factory);
-    networkKind = kind;
     node.boot(0);
 
     // Push node events → renderer
@@ -345,7 +303,6 @@ async function connectNetwork(kind: string, room?: string, visibility?: string):
 
 function stopNode(): void {
     if (node) { node.stop(); node = null; }
-    networkKind = null;
     unregisterGameHandlers();
 }
 
@@ -374,11 +331,11 @@ function registerIdentityHandlers(): void {
     });
 
     ipcMain.handle(INVOKE.NETWORK_GET_OPTIONS, async () => {
-        const { networkOptions } = await coreModule<{ networkOptions(): unknown }>('network/networks.js');
+        const { networkOptions } = await coreModule<CoreNetworks>('network/networks.js');
         return ok(networkOptions());
     });
 
-    ipcMain.handle(INVOKE.NETWORK_CONNECT, async (_e: IpcMainInvokeEvent, payload: { network: string; room?: string; visibility?: string }) => {
+    ipcMain.handle(INVOKE.NETWORK_CONNECT, async (_e: IpcMainInvokeEvent, payload: InvokeMap[typeof INVOKE.NETWORK_CONNECT]['payload']) => {
         try {
             await connectNetwork(payload?.network, payload?.room, payload?.visibility);
             return ok({ network: payload.network });
@@ -389,7 +346,7 @@ function registerIdentityHandlers(): void {
 
     ipcMain.handle(INVOKE.NETWORK_BROWSE_PUBLIC, async () => {
         try {
-            const { browsePublicGames } = await coreModule<{ browsePublicGames(): Promise<unknown> }>('network/globalnetwork/lobby.js');
+            const { browsePublicGames } = await coreModule<CoreLobby>('network/globalnetwork/lobby.js');
             return ok(await browsePublicGames());
         } catch (err: any) {
             return fail(err?.message ?? 'failed_to_browse');
