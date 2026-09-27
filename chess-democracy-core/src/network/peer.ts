@@ -33,16 +33,6 @@ export class Peer {
         return this.data;
     }
 
-    public get PeerIp(): string {
-        return this.data.ip;
-    }
-
-    public send(payload: object): void {
-        if (this.connection.isOpen) {
-            this.connection.send(JSON.stringify(payload));
-        }
-    }
-
     public touch(): void {
         this.lastSeen = Date.now();
     }

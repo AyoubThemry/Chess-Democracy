@@ -14,11 +14,3 @@ export function toError(value: unknown): Error {
     if (value instanceof Error) return value;
     return new Error(String(value));
 }
-
-/**
- * Extracts a human-readable message from any thrown value.
- * Safe to use directly in log statements.
- */
-export function errorMessage(value: unknown): string {
-    return toError(value).message;
-}

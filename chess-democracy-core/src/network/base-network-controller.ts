@@ -1,5 +1,4 @@
 import { PeerMessaging }       from './peer-messaging.js';
-import { INetworkController }  from "./i-network-controller-interface.js";
 import { WebsocketService }    from "./websocket-service.js";
 import { ConnectorService }    from "./localnetwork/connector-service.js";
 import { MessageService, MessageCallbacks, NonceStore } from "./message-service.js";
@@ -11,7 +10,7 @@ import { toError }             from '../utils/errors.js';
 import { NETWORK_CONFIG }      from '../utils/config.js';
 import { logger }              from '../utils/logger.js';
 
-export abstract class BaseNetworkController extends PeerMessaging implements INetworkController {
+export abstract class BaseNetworkController extends PeerMessaging {
     protected connector = new ConnectorService();
     private readonly nonces = new NonceStore();   // replay protection, this node's own
 

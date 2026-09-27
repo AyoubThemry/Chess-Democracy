@@ -53,7 +53,6 @@ class TestController extends BaseNetworkController {
         return {
             setTimeOffset: (_n: number) => {},
             onGameStart:   (_m: any, _k: string) => {},
-            onMove:        (_m: any, _k: string) => {},
             onGameOver:    (_m: any, _k: string) => {},
         };
     }

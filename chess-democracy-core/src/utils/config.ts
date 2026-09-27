@@ -1,14 +1,12 @@
 export const NETWORK_CONFIG = {
     MAX_PEERS: 150,
-    // GOSSIP_TTL: 6,
-    HANDSHAKE_TIMEOUT_MS: 5000,       // 5s  – unchanged, reasonable
+    HANDSHAKE_TIMEOUT_MS: 5000,       // 5s  – how long a new connection has to prove who it is
     GHOST_TIMEOUT_MS: 30_000,          // 30s – peers unresponsive beyond this are marked dead.
                                        // Peers ping at a third of this, so two
                                        // pings can be lost before a live peer is
                                        // wrongly swept.
-    WAIT_BEFORE_READYING: 10000,       // 10s – was 60000 (60 s) – shorter settle time for LAN
     NETWORK_BACKLOG: 500,
-    TIME_SKEW_TOLERANCE_MS: 30000,     // 30s – used in handshake timestamp check (was 120 s inline magic number)
+    TIME_SKEW_TOLERANCE_MS: 30000,     // 30s – how far a handshake's clock may be from ours
     MAX_HANDSHAKES_PER_MIN: 20,        // rate-limit guard
     NONCE_TTL_MS: 300_000,             // 5 min – how long a seen nonce is remembered to block replays
     RECONNECT_INTERVAL_MS: 3_000,      // how often to retry a dropped peer
@@ -50,9 +48,6 @@ export function validateNetworkConfig(): void {
 
     if (NETWORK_CONFIG.GHOST_TIMEOUT_MS <= NETWORK_CONFIG.HANDSHAKE_TIMEOUT_MS)
         errors.push(`GHOST_TIMEOUT_MS must be > HANDSHAKE_TIMEOUT_MS (got ${NETWORK_CONFIG.GHOST_TIMEOUT_MS})`);
-
-    if (NETWORK_CONFIG.WAIT_BEFORE_READYING < 5000)
-        errors.push(`WAIT_BEFORE_READYING must be >= 5000 ms (got ${NETWORK_CONFIG.WAIT_BEFORE_READYING})`);
 
     if (NETWORK_CONFIG.TIME_SKEW_TOLERANCE_MS > 60000)
         errors.push(`TIME_SKEW_TOLERANCE_MS should be <= 60000 ms for security (got ${NETWORK_CONFIG.TIME_SKEW_TOLERANCE_MS})`);

@@ -2,12 +2,8 @@ import { describe, it, expect } from 'vitest';
 import { NETWORK_CONFIG, validateNetworkConfig } from '../utils/config.js';
 
 describe('NETWORK_CONFIG', () => {
-    it('is immutable (as const)', () => {
-        // TypeScript enforces this at compile time; at runtime the object is
-        // still writable unless we use Object.freeze, but we verify the values
-        // are the corrected ones from Task 1.
+    it('has the expected timeouts', () => {
         expect(NETWORK_CONFIG.GHOST_TIMEOUT_MS).toBe(30_000);
-        expect(NETWORK_CONFIG.WAIT_BEFORE_READYING).toBe(10_000);
         expect(NETWORK_CONFIG.TIME_SKEW_TOLERANCE_MS).toBe(30_000);
         expect(NETWORK_CONFIG.NONCE_TTL_MS).toBe(300_000);
     });

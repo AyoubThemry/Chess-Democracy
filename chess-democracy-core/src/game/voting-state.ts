@@ -123,10 +123,6 @@ export class VotingState {
             .map(([, v]) => v);
     }
 
-    tally(): TallyResult {
-        return tallyMoves([...this._votes.values()]);
-    }
-
     openRevote(newWindowCloseAt: number): void {
         this._revoteCount++;
         this._votes.clear();

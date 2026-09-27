@@ -11,7 +11,6 @@ import { verifyTally, checkVote, TallyClaim } from "../game/verify-tally.js";
 import type { GameSnapshot } from "../game/snapshot.js";
 import {
     sendGameStart,
-    sendMove,
     sendGameOver,
 } from "../game/game-protocol.js";
 import { MessageCallbacks }        from "../network/message-service.js";
@@ -73,7 +72,6 @@ export class Node extends EventEmitter {
     private readonly roster = new Map<string, Team>();
     // After a player reconnects, don't count votes until states are exchanged.
     private _resyncGraceUntil = 0;
-    private _gameMode:        'direct' | 'voting' = 'voting';
 
     // Resign vote state
     private _resignVote: {
@@ -253,15 +251,6 @@ export class Node extends EventEmitter {
         return 'ok';
     }
 
-    adjustAlivePeersCount(sign: '+' | '-', amount: number): void {
-        if (sign === '+') {
-            this.state.alivePeersCount += amount;
-            this.state.lastConnectionMs = Date.now();
-        } else {
-            this.state.alivePeersCount = Math.max(0, this.state.alivePeersCount - amount);
-        }
-    }
-
     getSynchronizedTime(): number { return Date.now() + this.state.timeOffset; }
 
     setTimeOffset(offset: number): void {
@@ -277,7 +266,6 @@ export class Node extends EventEmitter {
         const callbacks: MessageCallbacks = {
             setTimeOffset: (offset) => this.setTimeOffset(offset),
             onGameStart:   (msg, senderKey) => this.handleGameStart(msg, senderKey),
-            onMove:        (msg, senderKey) => this.handleMove(msg, senderKey),
             onGameOver:    (msg, senderKey) => this.handleGameOver(msg, senderKey),
 
             onSideChoice: (senderKey, team) => {
@@ -456,7 +444,6 @@ export class Node extends EventEmitter {
             callbacks,
             getAllPeers:           () => this.allPeers,
             getAlivePeersCount:    () => this.totalAlivePeersCount,
-            adjustAlivePeersCount: (sign, amount) => this.adjustAlivePeersCount(sign, amount),
             acceptingConnection:   (peerKey) => this.acceptsConnection(peerKey),
             summary:               () => this.summary(),
         }, port).then(({ network, boundPort }) => {
@@ -606,7 +593,6 @@ export class Node extends EventEmitter {
         this.emit('game:starting', { startsAt, countdownMs: delay, myTeam: this.game.myTeam });
 
         this.gameStartTimeout = setTimeout(() => {
-            this._gameMode = 'voting';
             this.game.begin();
             logger.info(`Game live`, {
                 gameId: this.game.gameId.slice(0, 8),
@@ -1121,57 +1107,6 @@ export class Node extends EventEmitter {
                                      : this.roster.has(peerKey);
     }
 
-    private handleMove(msg: Record<string, unknown>, senderKey: string): void {
-        // Legacy path — in voting mode peers send 'vote' messages, not 'move'.
-        // Kept for backward compatibility.
-        if (this._gameMode === 'voting') {
-            logger.warn(`Ignoring 'move' message in voting mode`, { sender: senderKey.slice(0, 8) });
-            return;
-        }
-        if (this.game.phase !== 'in_progress') return;
-
-        const senderPeer = this.allPeers.get(senderKey);
-        const senderTeam = (senderPeer?.team ?? null) as Team | null;
-        if (!senderTeam) return;
-
-        const recorded = {
-            moveIndex:  msg.moveIndex as number,
-            move:       msg.move as string,
-            senderKey,
-            fenBefore:  msg.fenBefore as string,
-            fenAfter:   msg.fenAfter as string,
-            timestamp:  msg.timestamp as number,
-        };
-
-        const result = this.game.applyMove(recorded, senderTeam);
-        if (result !== 'ok') {
-            logger.error(`Move rejected`, { reason: result, sender: senderKey.slice(0, 8), move: msg.move });
-            return;
-        }
-
-        this.emit('game:move', {
-            move:       recorded.move,
-            moveIndex:  recorded.moveIndex,
-            senderTeam,
-            fen:        this.game.fen,
-            legalMoves: this.game.legalMoves,
-            isMyTurn:   this.game.isMyTurn,
-        });
-
-        const phaseAfter = (this.game as { phase: string }).phase;
-        if (phaseAfter === 'finished' && this.game.result) {
-            sendGameOver(
-                this.allPeers,
-                this.identity.publicKey,
-                this.identity.privateKey,
-                this.game.gameId,
-                this.game.result,
-                this.game.fen,
-                this.game.moveHistory.length,
-            );
-        }
-    }
-
     /**
      * Returns why a peer's game_over should be ignored, or null to accept it.
      *
@@ -1253,57 +1188,6 @@ export class Node extends EventEmitter {
             lastFen:   this.game.fen,
             moveCount: this.game.moveHistory.length,
         });
-    }
-
-    // Public game API
-
-    public submitMove(uciMove: string): string {
-        // In voting mode (active voting window) use castVote instead
-        if (this._voting !== null) return 'error:use_cast_vote_in_voting_mode';
-
-        if (!this.game.isMyTurn) {
-            return `not_your_turn:current=${this.game.currentTurn},you=${this.game.myTeam}`;
-        }
-
-        const fenBefore = this.game.fen;
-        const recorded  = {
-            moveIndex: this.game.nextMoveIndex,
-            move:      uciMove,
-            senderKey: this.identity.publicKey,
-            fenBefore,
-            timestamp: this.getSynchronizedTime(),
-        };
-
-        const result = this.game.applyMove(recorded, this.game.myTeam!);
-        if (result !== 'ok') return result;
-
-        const fenAfter = this.game.fen;
-
-        sendMove(
-            this.allPeers,
-            this.identity.publicKey,
-            this.identity.privateKey,
-            this.game.gameId,
-            recorded.moveIndex,
-            uciMove,
-            fenBefore,
-            fenAfter,
-            this.game.myTeam!,
-        );
-
-        if (this.game.phase === 'finished' && this.game.result) {
-            sendGameOver(
-                this.allPeers,
-                this.identity.publicKey,
-                this.identity.privateKey,
-                this.game.gameId,
-                this.game.result,
-                fenAfter,
-                this.game.moveHistory.length,
-            );
-        }
-
-        return 'ok';
     }
 
     // Resign helpers
@@ -1445,7 +1329,6 @@ export class Node extends EventEmitter {
         this._drawOfferedBy = null;
         this._resyncGraceUntil = 0;
         this._voting    = null;
-        this._gameMode  = 'voting';
 
         this._gameConfig                = { ...DEFAULT_GAME_CONFIG };
         this._configVersion             = 0;

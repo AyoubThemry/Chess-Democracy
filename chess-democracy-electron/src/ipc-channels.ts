@@ -69,7 +69,6 @@ export const INVOKE = {
     PEER_GET_ALL:       'peer:get_all',
     GAME_SET_TEAM:      'game:set_team',
     GAME_READY:         'game:ready',
-    GAME_SUBMIT_MOVE:   'game:submit_move',
     GAME_RESIGN:        'game:resign',
     GAME_UNREADY:       'game:unready',
     GAME_SET_CONFIG:    'game:set_config',
@@ -114,10 +113,6 @@ export interface InvokeMap {
     [INVOKE.GAME_READY]: {
         payload: void;
         result:  IpcResult<void>;
-    };
-    [INVOKE.GAME_SUBMIT_MOVE]: {
-        payload: { move: string };
-        result:  IpcResult<GameSnapshot>;
     };
     [INVOKE.GAME_RESIGN]: {
         payload: void;
@@ -379,7 +374,6 @@ export interface ChessDemocracyAPI {
     getPeers():         Promise<InvokeMap[typeof INVOKE.PEER_GET_ALL]['result']>;
     setTeam(team: Team): Promise<InvokeMap[typeof INVOKE.GAME_SET_TEAM]['result']>;
     ready():            Promise<InvokeMap[typeof INVOKE.GAME_READY]['result']>;
-    submitMove(move: string): Promise<InvokeMap[typeof INVOKE.GAME_SUBMIT_MOVE]['result']>;
     resign():           Promise<InvokeMap[typeof INVOKE.GAME_RESIGN]['result']>;
     unready():          Promise<InvokeMap[typeof INVOKE.GAME_UNREADY]['result']>;
     setConfig(voteWindowMs: number, maxRevotes: number, resignThreshold: number, resignWindowMs: number): Promise<InvokeMap[typeof INVOKE.GAME_SET_CONFIG]['result']>;

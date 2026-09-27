@@ -36,9 +36,6 @@ const api: ChessDemocracyAPI = {
     ready: () =>
         ipcRenderer.invoke(INVOKE.GAME_READY),
 
-    submitMove: (move: string) =>
-        ipcRenderer.invoke(INVOKE.GAME_SUBMIT_MOVE, { move }),
-
     resign: () =>
         ipcRenderer.invoke(INVOKE.GAME_RESIGN),
 

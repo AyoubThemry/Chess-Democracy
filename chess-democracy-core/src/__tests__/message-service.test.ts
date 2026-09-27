@@ -36,7 +36,6 @@ function makeCallbacks(overrides: Record<string, unknown> = {}) {
     return {
         setTimeOffset:    vi.fn(),
         onGameStart:      vi.fn(),
-        onMove:           vi.fn(),
         onGameOver:       vi.fn(),
         onSideChoice:     vi.fn(),
         onReady:          vi.fn(),

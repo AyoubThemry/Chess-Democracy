@@ -30,7 +30,6 @@ export class LocalNetworkController extends BaseNetworkController implements Gam
                 boundPort,
                 ctx.getAlivePeersCount,
                 ctx.getAllPeers,
-                ctx.adjustAlivePeersCount,
                 ctx.acceptingConnection,
                 ctx.callbacks,
             );
@@ -47,7 +46,6 @@ export class LocalNetworkController extends BaseNetworkController implements Gam
         port:       number,
         protected readonly getTotalAlivePeersCount:   () => number,
         protected readonly getAllPeers:               () => Map<string, Peer>,
-        private   readonly adjustAlivePeersCount:     (sign: '+' | '-', amount: number) => void,
         protected readonly acceptingConnectionStatus: (peerKey?: string) => boolean,
         private   readonly callbacks:                 MessageCallbacks,
     ) {

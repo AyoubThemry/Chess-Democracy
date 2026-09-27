@@ -65,7 +65,6 @@ interface NodeInterface {
     setTeam(team: string): boolean;
     ready(): string;
     unready(): string;
-    submitMove(move: string): string;
     castResignVote(): string;
     stop(): void;
     setConfig(voteWindowMs: number, maxRevotes: number, resignThreshold?: number, resignWindowMs?: number): string;
@@ -216,14 +215,6 @@ function registerGameHandlers(): void {
         return r === 'ok' ? ok(undefined) : fail(r);
     });
 
-    ipcMain.handle(INVOKE.GAME_SUBMIT_MOVE, (_e: IpcMainInvokeEvent, payload: { move: string }) => {
-        if (!payload?.move || typeof payload.move !== 'string') {
-            return fail('invalid_payload:move must be a string');
-        }
-        const r = node!.submitMove(payload.move);
-        return r === 'ok' ? ok(buildSnapshot()) : fail(r);
-    });
-
     ipcMain.handle(INVOKE.GAME_RESIGN, () => {
         const r = node!.castResignVote();
         return r === 'ok' ? ok(undefined) : fail(r);
@@ -278,7 +269,7 @@ function unregisterGameHandlers(): void {
     gameHandlersRegistered = false;
     [
         INVOKE.NODE_GET_IDENTITY, INVOKE.NODE_GET_STATE, INVOKE.PEER_GET_ALL,
-        INVOKE.GAME_SET_TEAM,     INVOKE.GAME_READY,     INVOKE.GAME_SUBMIT_MOVE,
+        INVOKE.GAME_SET_TEAM,     INVOKE.GAME_READY,
         INVOKE.GAME_RESIGN,       INVOKE.GAME_UNREADY,   INVOKE.NODE_GET_CONFIG,
         INVOKE.GAME_SET_CONFIG,   INVOKE.GAME_ACCEPT_CONFIG, INVOKE.GAME_CAST_VOTE,
         INVOKE.GAME_RESET,        INVOKE.GAME_OFFER_DRAW,    INVOKE.GAME_RESPOND_DRAW,

@@ -63,10 +63,6 @@ interface InboundMessage {
     resolvedTeam?: Team;
     startsAt?:     number;
     totalPlayers?: number;
-    moveIndex?:    number;
-    move?:         string;
-    fenBefore?:    string;
-    fenAfter?:     string;
     result?:       GameResult;
     lastFen?:      string;
     moveCount?:    number;
@@ -77,7 +73,6 @@ interface InboundMessage {
 export interface MessageCallbacks {
     setTimeOffset:    (offset: number) => void;
     onGameStart:      (payload: InboundMessage, senderKey: string) => void;
-    onMove:           (payload: InboundMessage, senderKey: string) => void;
     onGameOver:       (payload: InboundMessage, senderKey: string) => void;
     onSideChoice:     (senderKey: string, team: Team) => void;
     onReady:          (senderKey: string) => void;
@@ -392,16 +387,6 @@ export class MessageService {
                 });
                 callbacks.onGameStart(message, senderPublicKey);
                 return "game_start";
-            }
-
-            if (message.type === "move") {
-                logger.info(`Received move`, {
-                    from:  senderPublicKey.slice(0, 8),
-                    index: message.moveIndex,
-                    move:  message.move,
-                });
-                callbacks.onMove(message, senderPublicKey);
-                return "move";
             }
 
             if (message.type === "game_over") {
