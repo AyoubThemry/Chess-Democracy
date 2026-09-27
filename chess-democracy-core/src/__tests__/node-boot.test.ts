@@ -49,11 +49,4 @@ describe('Node — boot and stop lifecycle', () => {
         expect(network.start).not.toHaveBeenCalled();
         expect(network.stop).toHaveBeenCalledOnce();
     });
-
-    it('each Node instance has an independent peer count', () => {
-        const a = new Node();
-        const b = new Node();
-        a.adjustAlivePeersCount('+', 3);
-        expect(b.totalAlivePeersCount).toBe(0);
-    });
 });

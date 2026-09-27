@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { toError, errorMessage } from '../utils/errors.js';
+import { toError } from '../utils/errors.js';
 
 describe('toError', () => {
     it('returns the same Error instance when given an Error', () => {
@@ -35,19 +35,5 @@ describe('toError', () => {
         const result = toError({ code: 'ENOENT' });
         expect(result).toBeInstanceOf(Error);
         expect(result.message).toBe('[object Object]'); // String({}) is [object Object]
-    });
-});
-
-describe('errorMessage', () => {
-    it('extracts message from an Error', () => {
-        expect(errorMessage(new Error('hello'))).toBe('hello');
-    });
-
-    it('converts a string directly', () => {
-        expect(errorMessage('raw string')).toBe('raw string');
-    });
-
-    it('converts a number to string', () => {
-        expect(errorMessage(7)).toBe('7');
     });
 });

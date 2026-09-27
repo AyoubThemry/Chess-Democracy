@@ -50,7 +50,6 @@ export interface NetworkContext {
     callbacks:             MessageCallbacks;
     getAllPeers:           () => Map<string, Peer>;
     getAlivePeersCount:    () => number;
-    adjustAlivePeersCount: (sign: '+' | '-', amount: number) => void;
     /** No key: could anyone connect right now? With a key: may this peer? */
     acceptingConnection:   (peerKey?: string) => boolean;
     /** Where the game stands, for a public listing. */

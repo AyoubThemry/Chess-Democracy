@@ -84,22 +84,6 @@ describe('Node — state management', () => {
         expect(result).toBe(false);
     });
 
-    it('adjustAlivePeersCount("+") increments count', () => {
-        node.adjustAlivePeersCount('+', 1);
-        expect(node.totalAlivePeersCount).toBe(1);
-    });
-
-    it('adjustAlivePeersCount("-") decrements count', () => {
-        node.adjustAlivePeersCount('+', 3);
-        node.adjustAlivePeersCount('-', 2);
-        expect(node.totalAlivePeersCount).toBe(1);
-    });
-
-    it('adjustAlivePeersCount("-") never goes below zero', () => {
-        node.adjustAlivePeersCount('-', 99);
-        expect(node.totalAlivePeersCount).toBe(0);
-    });
-
     it('getSynchronizedTime returns approximately Date.now() with zero offset', () => {
         const before = Date.now();
         const synced = node.getSynchronizedTime();
@@ -118,13 +102,6 @@ describe('Node — state management', () => {
         node.setTimeOffset(-1000);
         const synced = node.getSynchronizedTime();
         expect(synced).toBeLessThan(Date.now()); // shifted backward
-    });
-
-    it('two Node instances are fully independent', () => {
-        const nodeA = new Node();
-        const nodeB = new Node();
-        nodeA.adjustAlivePeersCount('+', 5);
-        expect(nodeB.totalAlivePeersCount).toBe(0); // not shared
     });
 
     it('stop() does not throw', () => {

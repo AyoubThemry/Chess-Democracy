@@ -53,12 +53,10 @@ function makeController(peers: Map<string, Peer> = new Map(), accepting = true) 
         9000,
         () => peers.size,
         () => peers,
-        vi.fn(),
         () => accepting,
         {
             setTimeOffset: vi.fn(),
             onGameStart:   vi.fn(),
-            onMove:        vi.fn(),
             onGameOver:    vi.fn(),
         },
     );
@@ -103,13 +101,12 @@ describe('LocalNetworkController — getMessageCallbacks', () => {
     it('returns callbacks that call the injected functions', () => {
         const setTimeOffset = vi.fn();
         const onGameStart   = vi.fn();
-        const onMove        = vi.fn();
         const onGameOver    = vi.fn();
         const listener = makeListener();
         const ctrl     = new LocalNetworkController(
             'test', listener, identity, 9000,
-            () => 0, () => new Map(), vi.fn(), () => true,
-            { setTimeOffset, onGameStart, onMove, onGameOver },
+            () => 0, () => new Map(), () => true,
+            { setTimeOffset, onGameStart, onGameOver },
         );
         const cbs = ctrl.getMessageCallbacks();
         cbs.setTimeOffset(42);

@@ -234,15 +234,16 @@ Messages are JSON, broadcast over TCP to all connected peers. Each message is wr
 
 | Type | Direction | Purpose |
 |---|---|---|
-| `team` | broadcast | Player declares their side (white/black) |
+| `side_choice` | broadcast | Player declares their side (white/black) |
 | `ready` / `unready` | broadcast | Player toggles ready state |
-| `config` | broadcast | Propose new voting window / revote settings |
-| `config_accepted` | broadcast | Accept the current config version |
+| `config_proposal` | broadcast | Propose new voting window / revote settings |
+| `config_accept` | broadcast | Accept the current config version |
+| `time_sync_request` / `time_sync_response` | to the master and back | Measure the clock difference to the master |
+| `game_start` | broadcast (master only) | Game id and start time, once everyone is ready |
 | `vote` | broadcast | Cast a move vote during voting window |
 | `tally_result` | broadcast (master only) | Winning move plus every signed vote counted, so others can recount |
 | `game_snapshot` | to one peer | Moves so far, the open window and its votes, for a player who just reconnected |
 | `ping` | broadcast | Keepalive, so an idle player isn't dropped as gone |
-| `move` | broadcast | Committed move (after tally) |
 | `game_over` | broadcast | Game ended — includes result & reason |
 | `draw_offer` | broadcast | Offer a draw |
 | `draw_response` | broadcast | Accept or decline a draw offer |

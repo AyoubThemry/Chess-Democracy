@@ -21,7 +21,7 @@ async function until(check: () => boolean, ms = 2000): Promise<void> {
 }
 
 function callbacks(): MessageCallbacks {
-    const names = ['setTimeOffset', 'onGameStart', 'onMove', 'onGameOver', 'onSideChoice', 'onReady', 'onUnready',
+    const names = ['setTimeOffset', 'onGameStart', 'onGameOver', 'onSideChoice', 'onReady', 'onUnready',
         'onConfigProposal', 'onConfigAccept', 'onVote', 'onTallyResult', 'onGameSnapshot', 'onDrawOffer',
         'onDrawResponse', 'onResignVote'];
     return Object.fromEntries(names.map(n => [n, vi.fn()])) as unknown as MessageCallbacks;
@@ -34,7 +34,7 @@ function makeNode(room = 'test-room') {
     const cb       = callbacks();
     const net      = new HyperswarmNetwork({
         identity, callbacks: cb, getAllPeers: () => peers,
-        getAlivePeersCount: () => peers.size, adjustAlivePeersCount: () => {}, acceptingConnection: () => true,
+        getAlivePeersCount: () => peers.size, acceptingConnection: () => true,
         summary: () => ({ open: true, players: peers.size + 1, whites: 0, blacks: 0 }),
     }, { room });
     const connected: Peer[] = [], disconnected: Peer[] = [];

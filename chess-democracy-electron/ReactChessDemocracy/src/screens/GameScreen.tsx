@@ -279,9 +279,8 @@ export default function GameScreen() {
         }
     }, [phase]);
 
-    // Log voting state changes + reset selection on new window
+    // A new vote window starts with nothing selected
     useEffect(() => {
-        console.log('[VOTE] voting state changed:', { voting, isMyTurn, isMyVotingTurn: isMyTurn && !!voting, myTeam, phase });
         setVotingMove(null);
         setSelectedSq(null);
         setHighlightSqs({});
@@ -296,11 +295,7 @@ export default function GameScreen() {
 
     // react-chessboard v5: onSquareClick receives { piece, square }
     function onSquareClick({ square }: { piece: unknown; square: string }) {
-        console.log('[VOTE] onSquareClick', square, { isMyVotingTurn, alreadyVoted, castingVote, selectedSq, legalMovesCount: legalMoves.length });
-        if (!isMyVotingTurn || alreadyVoted || castingVote) {
-            console.log('[VOTE] click blocked —', { isMyVotingTurn, alreadyVoted, castingVote });
-            return;
-        }
+        if (!isMyVotingTurn || alreadyVoted || castingVote) return;
 
         if (selectedSq) {
             if (selectedSq === square) {
@@ -312,9 +307,7 @@ export default function GameScreen() {
                     setPromoPending({ from: selectedSq, to: square });
                     setSelectedSq(null); setHighlightSqs({});
                 } else {
-                    const move = selectedSq + square;
-                    console.log('[VOTE] move selected via click:', move);
-                    setVotingMove(move);
+                    setVotingMove(selectedSq + square);
                     setSelectedSq(null);
                     setHighlightSqs({ [selectedSq]: { backgroundColor: 'rgba(124,106,247,0.35)' }, [square]: { backgroundColor: 'rgba(80,200,120,0.45)' } });
                 }
@@ -328,7 +321,6 @@ export default function GameScreen() {
             }
         } else {
             const dests = legalDests(square);
-            console.log('[VOTE] piece selected:', square, 'legal dests:', dests);
             if (dests.length > 0) {
                 setSelectedSq(square);
                 setHighlightSqs(buildHighlights(square, dests));
@@ -338,22 +330,12 @@ export default function GameScreen() {
 
     // react-chessboard v5: onPieceDrop receives { piece, sourceSquare, targetSquare }
     function onPieceDrop({ sourceSquare: from, targetSquare: to }: { piece: unknown; sourceSquare: string; targetSquare: string | null }): boolean {
-        console.log('[VOTE] onPieceDrop', from, '->', to, { isMyVotingTurn, alreadyVoted, castingVote });
-        if (!to || !isMyVotingTurn || alreadyVoted || castingVote) {
-            console.log('[VOTE] drop blocked');
-            return false;
-        }
-        const dests = legalDests(from);
-        if (!dests.includes(to)) {
-            console.log('[VOTE] drop illegal — dests for', from, ':', dests);
-            return false;
-        }
+        if (!to || !isMyVotingTurn || alreadyVoted || castingVote) return false;
+        if (!legalDests(from).includes(to)) return false;
         if (isPromotionMove(fen, from, to)) {
             setPromoPending({ from, to });
         } else {
-            const move = from + to;
-            console.log('[VOTE] move selected via drop:', move);
-            setVotingMove(move);
+            setVotingMove(from + to);
             setHighlightSqs({ [from]: { backgroundColor: 'rgba(124,106,247,0.35)' }, [to]: { backgroundColor: 'rgba(80,200,120,0.45)' } });
         }
         setSelectedSq(null);
@@ -377,20 +359,16 @@ export default function GameScreen() {
     }
 
     async function handleCastVote() {
-        console.log('[VOTE] handleCastVote called', { voting_move, castingVote, alreadyVoted });
         if (!voting_move || castingVote || alreadyVoted) return;
         setCastingVote(true);
         try {
-            const api = (window as any).chessDemocracy;
-            console.log('[VOTE] calling api.castVote with:', voting_move);
-            const res = await api.castVote(voting_move);
-            console.log('[VOTE] castVote result:', res);
+            const res = await (window as any).chessDemocracy.castVote(voting_move);
             if (!res.ok) {
                 setNotification({ type: 'error', message: `Vote rejected: ${res.error}` });
                 setVotingMove(null);
             }
         } catch (err) {
-            console.error('[VOTE] castVote exception:', err);
+            console.error('castVote failed:', err);
             setNotification({ type: 'error', message: 'Failed to cast vote' });
         } finally {
             setCastingVote(false);

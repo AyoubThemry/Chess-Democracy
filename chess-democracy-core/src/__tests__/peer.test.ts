@@ -34,10 +34,6 @@ describe('Peer', () => {
         expect(peer.peerPublicNodeId).toBe(sampleData.peerPublicNodeId);
     });
 
-    it('exposes PeerIp from PeerData', () => {
-        expect(peer.PeerIp).toBe('192.168.1.10');
-    });
-
     it('initialises with status Alive', () => {
         expect(peer.status).toBe(PeerStatus.Alive);
     });
@@ -56,18 +52,6 @@ describe('Peer', () => {
         const after  = Date.now();
         expect(peer.lastSeen).toBeGreaterThanOrEqual(before);
         expect(peer.lastSeen).toBeLessThanOrEqual(after);
-    });
-
-    it('send() calls socket.send when socket is OPEN', () => {
-        peer.send({ type: 'ping' });
-        expect(socket.send).toHaveBeenCalledOnce();
-    });
-
-    it('send() does NOT call socket.send when socket is CLOSED', () => {
-        const closedSocket = makeSocket(WebSocket.CLOSED);
-        const closedPeer   = new Peer(sampleData, new WebSocketConnection(closedSocket));
-        closedPeer.send({ type: 'ping' });
-        expect(closedSocket.send).not.toHaveBeenCalled();
     });
 
     it('allows status to be set to Dead', () => {

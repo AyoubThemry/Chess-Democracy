@@ -4,6 +4,7 @@ import { WebSocketConnection }     from "../peer-connection.js";
 import { signMessage, verifySignature } from "../../protocol/verifysignsignature.js";
 import { randomUUID }              from "crypto";
 import { toError }                 from "../../utils/errors.js";
+import { NETWORK_CONFIG }          from "../../utils/config.js";
 import { logger }                  from "../../utils/logger.js";
 
 /**
@@ -68,7 +69,7 @@ export class ConnectorService {
                 logger.error(`Handshake timeout`, { peer: peerData.peerPublicNodeId.slice(0, 8) });
                 socket.close();
                 reject(new Error("Handshake timeout"));
-            }, 5000);
+            }, NETWORK_CONFIG.HANDSHAKE_TIMEOUT_MS);
         });
     }
 

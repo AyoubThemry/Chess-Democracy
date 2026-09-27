@@ -4,7 +4,7 @@
  * Responsibilities:
  *  • Wraps chess.js for move validation and FEN tracking
  *  • Owns the state machine: Waiting → Starting → InProgress → Finished
- *  • Resolves team conflicts deterministically from the peer list
+ *  • Checks that both sides have at least one player before a game starts
  *  • Tracks move history with full metadata (who sent it, when, index)
  *
  * Design rule: GameState is PURE — it holds data and validates moves.
@@ -61,21 +61,6 @@ export function checkTeamBalance(
     const whites = participants.filter(p => p.announcedTeam === 'white').length;
     const blacks  = participants.filter(p => p.announcedTeam === 'black').length;
     return { whites, blacks, canStart: whites > 0 && blacks > 0 };
-}
-
-/**
- * Builds the final team map from all participants' chosen sides.
- * Every participant keeps the side they announced — no rebalancing.
- * Assumes checkTeamBalance() has already confirmed canStart === true.
- */
-export function resolveTeams(
-    participants: Array<{ publicKey: string; announcedTeam: Team }>,
-): Map<string, Team> {
-    const resolved = new Map<string, Team>();
-    for (const p of participants) {
-        resolved.set(p.publicKey, p.announcedTeam);
-    }
-    return resolved;
 }
 
 // ---------------------------------------------------------------------------
