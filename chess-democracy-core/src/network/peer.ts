@@ -1,4 +1,5 @@
 import type { PeerConnection } from './peer-connection.js';
+import type { Team } from '../game/game-state.js';
 
 export interface PeerData {
     peerPublicNodeId: string;
@@ -17,7 +18,7 @@ export class Peer {
     public lastSeen: number = Date.now();          // for ghost detection
     public status:   PeerStatus = PeerStatus.Alive;
     public ready:    boolean = false;              // ready state for game coordination
-    public team:     string | null = null;         // 'white' | 'black' | null
+    public team:     Team | null = null;
 
     constructor(data: PeerData, connection: PeerConnection) {
         this.data       = data;

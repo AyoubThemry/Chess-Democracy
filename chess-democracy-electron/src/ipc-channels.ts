@@ -191,6 +191,14 @@ export interface InvokeMap {
 
 export type Visibility = 'public' | 'private';
 
+/** Over the internet: players found in the room versus players actually reached. */
+export interface RoomReach {
+    found:     number;
+    connected: number;
+    /** Someone was found but hasn't been reached for a while. */
+    stuck:     boolean;
+}
+
 /** A public game open to join, as listed in the internet lobby. */
 export interface PublicGame {
     room:      string;
@@ -359,11 +367,7 @@ export interface PushMap {
     };
     [PUSH.RESIGN_VOTE_EXPIRED]: Record<string, never>;
     /** Over the internet: players found in the room versus players reached. */
-    [PUSH.NETWORK_REACH]: {
-        found:     number;
-        connected: number;
-        stuck:     boolean;
-    };
+    [PUSH.NETWORK_REACH]: RoomReach;
 }
 
 // window.chessDemocracy — full type exposed to React by preload.ts

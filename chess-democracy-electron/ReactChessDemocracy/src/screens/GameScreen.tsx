@@ -17,8 +17,9 @@
 
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { Chessboard }            from 'react-chessboard';
-import { Chess }                 from 'chess.js';
+import { Chess, type Square }    from 'chess.js';
 import { useStore }              from '../store';
+import { bridge } from '../bridge';
 import './GameScreen.css';
 
 // ── Promotion picker ──────────────────────────────────────────────────────────
@@ -259,12 +260,12 @@ export default function GameScreen() {
 
     // Draw offer subscriptions
     useEffect(() => {
-        const api = (window as any).chessDemocracy;
-        const unsub1 = api.on.drawOffered((d: any) => {
+        const api = bridge();
+        const unsub1 = api.on.drawOffered(d => {
             // Only the side that was offered the draw can answer it.
             if (!d.fromSelf && d.byOpponent) setDrawOffered(true);
         });
-        const unsub2 = api.on.drawDeclined((_d: any) => {
+        const unsub2 = api.on.drawDeclined(() => {
             setDrawSent(false);
             setNotification({ type: 'error', message: 'Draw offer declined' });
         });
@@ -352,7 +353,7 @@ export default function GameScreen() {
 
     async function handleRematch() {
         try {
-            await (window as any).chessDemocracy.resetGame();
+            await bridge().resetGame();
         } catch {
             setNotification({ type: 'error', message: 'Failed to reset game' });
         }
@@ -362,7 +363,7 @@ export default function GameScreen() {
         if (!voting_move || castingVote || alreadyVoted) return;
         setCastingVote(true);
         try {
-            const res = await (window as any).chessDemocracy.castVote(voting_move);
+            const res = await bridge().castVote(voting_move);
             if (!res.ok) {
                 setNotification({ type: 'error', message: `Vote rejected: ${res.error}` });
                 setVotingMove(null);
@@ -377,7 +378,7 @@ export default function GameScreen() {
 
     async function handleResign() {
         try {
-            const res = await (window as any).chessDemocracy.resign();
+            const res = await bridge().resign();
             if (!res.ok) {
                 if (res.error !== 'error:already_voted') {
                     setNotification({ type: 'error', message: `Resign vote failed: ${res.error}` });
@@ -392,7 +393,7 @@ export default function GameScreen() {
         if (drawSent) return;
         setDrawSent(true);
         try {
-            const res = await (window as any).chessDemocracy.offerDraw();
+            const res = await bridge().offerDraw();
             if (!res.ok) {
                 setDrawSent(false);
                 setNotification({ type: 'error', message: `Draw offer failed: ${res.error}` });
@@ -406,7 +407,7 @@ export default function GameScreen() {
     async function handleDrawResponse(accept: boolean) {
         setDrawOffered(false);
         try {
-            await (window as any).chessDemocracy.respondToDraw(accept);
+            await bridge().respondToDraw(accept);
         } catch {
             setNotification({ type: 'error', message: 'Failed to respond to draw offer' });
         }
@@ -575,7 +576,7 @@ function buildHighlights(from: string, dests: string[]): Record<string, object> 
 function isPromotionMove(fen: string, from: string, to: string): boolean {
     try {
         const chess = new Chess(fen);
-        const piece = chess.get(from as any);
+        const piece = chess.get(from as Square);
         if (!piece || piece.type !== 'p') return false;
         const toRank = parseInt(to[1]);
         return (piece.color === 'w' && toRank === 8) ||

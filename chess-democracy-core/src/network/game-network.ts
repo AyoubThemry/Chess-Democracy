@@ -15,6 +15,11 @@ import type { MessageCallbacks } from './message-service.js';
  *   'peer:connected'    (peer: Peer)  a peer finished its handshake
  *   'peer:disconnected' (peer: Peer)  its connection closed
  *
+ * And may emit, where it means something for that network:
+ *   'reach' (reach: RoomReach)  players found versus players reached. Only
+ *                               over the internet, where one can be found
+ *                               but not reachable.
+ *
  * Inbound messages go to the MessageCallbacks it was created with.
  */
 export interface GameNetwork extends EventEmitter {
@@ -26,7 +31,7 @@ export interface GameNetwork extends EventEmitter {
 
     broadcastGameStart(gameId: string, resolvedTeam: Team, startsAt: number, totalPlayers: number): void;
     broadcastGameOver(gameId: string, result: GameResult, lastFen: string, moveCount: number): void;
-    broadcastReady(team: string): void;
+    broadcastReady(team: Team): void;
     broadcastUnready(): void;
     broadcastSideChoice(team: Team): void;
     sendSideChoiceToPeer(team: Team, peer: Peer): void;
@@ -47,6 +52,14 @@ export interface GameNetwork extends EventEmitter {
 }
 
 /** What Node hands a transport so it can read peers and deliver messages. */
+/** Players found in the room, and how many of them we're actually connected to. */
+export interface RoomReach {
+    found:     number;
+    connected: number;
+    /** Someone was found but hasn't been reached for a while. */
+    stuck:     boolean;
+}
+
 export interface NetworkContext {
     identity:              { publicKey: string; privateKey: string };
     callbacks:             MessageCallbacks;

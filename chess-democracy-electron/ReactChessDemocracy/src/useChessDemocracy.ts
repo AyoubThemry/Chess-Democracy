@@ -3,13 +3,8 @@
 
 import { useEffect, useRef } from 'react';
 import { useStore } from './store';
+import { ipc, bridge } from './bridge';
 import type { NetworkKind, Visibility, PublicGame } from './ipc-types';
-
-// Check whether we are inside the Electron preload context.
-const ipc = () =>
-    typeof window !== 'undefined' && (window as any).chessDemocracy
-        ? (window as any).chessDemocracy
-        : null;
 
 export function useChessDemocracy(): void {
     const store       = useStore();
@@ -29,7 +24,7 @@ export function useChessDemocracy(): void {
         //    screen, but not the network screen: networking only starts once
         //    the player has picked a network.
 
-        async function init() {
+        const init = async () => {
             const prefsRes = await api.getIdentityPrefs();
             if (prefsRes.ok && prefsRes.value.remembered && prefsRes.value.identityPath) {
                 const startRes = await api.startNode(prefsRes.value.identityPath);
@@ -41,13 +36,13 @@ export function useChessDemocracy(): void {
                 }
             }
             store.setHydrated();   // mark hydrated so App doesn't show spinner
-        }
+        };
 
         init().catch(console.error);
 
         // 2. PUSH subscriptions
 
-        const unsubPeerJoined = api.on.peerJoined((data: any) => {
+        const unsubPeerJoined = api.on.peerJoined((data) => {
             store.upsertPeer({
                 peerId: data.peerId,
                 team:   null,
@@ -64,19 +59,19 @@ export function useChessDemocracy(): void {
             }, 500);
         });
 
-        const unsubPeerLeft = api.on.peerLeft((data: any) => {
+        const unsubPeerLeft = api.on.peerLeft((data) => {
             store.removePeer(data.peerId);
         });
 
-        const unsubPeerTeamUpdated = api.on.peerTeamUpdated((data: any) => {
+        const unsubPeerTeamUpdated = api.on.peerTeamUpdated((data) => {
             store.updatePeerTeam(data.peerId, data.team);
         });
 
-        const unsubPeerReadyChanged = api.on.peerReadyChanged((data: any) => {
+        const unsubPeerReadyChanged = api.on.peerReadyChanged((data) => {
             store.updatePeerReady(data.peerId, data.ready);
         });
 
-        const unsubWaitingSide = api.on.waitingForSide((data: any) => {
+        const unsubWaitingSide = api.on.waitingForSide((data) => {
             store.setSideBalance({
                 whites:     data.whites,
                 blacks:     data.blacks,
@@ -84,7 +79,7 @@ export function useChessDemocracy(): void {
             });
         });
 
-        const unsubGameStarting = api.on.gameStarting((data: any) => {
+        const unsubGameStarting = api.on.gameStarting((data) => {
             store.setStarting(data.startsAt, data.countdownMs, data.myTeam);
 
             // Start the live countdown ticker
@@ -94,7 +89,7 @@ export function useChessDemocracy(): void {
             }, 1000);
         });
 
-        const unsubGameStarted = api.on.gameStarted((data: any) => {
+        const unsubGameStarted = api.on.gameStarted((data) => {
             // Stop the countdown ticker
             if (countdownId.current) {
                 clearInterval(countdownId.current);
@@ -103,7 +98,7 @@ export function useChessDemocracy(): void {
             store.setStarted(data.gameId, data.myTeam, data.fen, data.legalMoves);
         });
 
-        const unsubGameMove = api.on.gameMove((data: any) => {
+        const unsubGameMove = api.on.gameMove((data) => {
             store.applyMove(
                 data.move,
                 data.moveIndex,
@@ -114,49 +109,49 @@ export function useChessDemocracy(): void {
             );
         });
 
-        const unsubGameOver = api.on.gameOver((data: any) => {
+        const unsubGameOver = api.on.gameOver((data) => {
             store.setGameOver(data.gameId, data.result, data.lastFen, data.moveCount);
             store.closeVotingWindow();
             store.closeResignVote();
         });
 
 
-        const unsubConfigUpdated = api.on.configUpdated((data: any) => {
+        const unsubConfigUpdated = api.on.configUpdated((data) => {
             store.setConfigUpdated(data.voteWindowMs, data.maxRevotes, data.resignThreshold, data.resignWindowMs, data.version, data.proposerKey);
         });
 
-        const unsubConfigPeerAccepted = api.on.configPeerAccepted((data: any) => {
+        const unsubConfigPeerAccepted = api.on.configPeerAccepted((data) => {
             store.addPeerAcceptedConfig(data.peerId);
         });
 
-        const unsubConfigSelfAccepted = api.on.configSelfAccepted((data: any) => {
+        const unsubConfigSelfAccepted = api.on.configSelfAccepted((data) => {
             store.setSelfAcceptedConfig(data.version);
         });
 
 
-        const unsubVoteWindowOpened = api.on.voteWindowOpened((data: any) => {
+        const unsubVoteWindowOpened = api.on.voteWindowOpened((data) => {
             store.openVotingWindow(data.turnIndex, data.windowCloseAt, data.voteWindowMs, data.isMyTurn);
         });
 
-        const unsubVoteReceived = api.on.voteReceived((data: any) => {
+        const unsubVoteReceived = api.on.voteReceived((data) => {
             const identity = store.identity;
             const isSelf   = identity?.publicKey === data.peerId;
             store.addVote(data.peerId, data.move, isSelf);
         });
 
-        const unsubTallyDone = api.on.tallyDone((data: any) => {
+        const unsubTallyDone = api.on.tallyDone((data) => {
             store.closeVotingWindow();
             store.applyMove(
                 data.move,
                 data.turnIndex,
-                data.appliedByTeam as any,
+                data.appliedByTeam,
                 data.fen,
                 data.legalMoves,
                 data.isMyTurn,
             );
         });
 
-        const unsubRevoteStarted = api.on.revoteStarted((data: any) => {
+        const unsubRevoteStarted = api.on.revoteStarted((data) => {
             store.applyRevote(data.turnIndex, data.windowCloseAt, data.voteWindowMs, data.revoteCount);
         });
 
@@ -169,7 +164,7 @@ export function useChessDemocracy(): void {
         });
 
 
-        const unsubDrawOffered  = api.on.drawOffered?.((data: any) => {
+        const unsubDrawOffered  = api.on.drawOffered?.((data) => {
             const message = data.fromSelf ? 'You offered a draw.'
                           : data.byOpponent ? 'Opponent offered a draw.'
                           : 'A teammate offered a draw. The other side decides.';
@@ -180,13 +175,13 @@ export function useChessDemocracy(): void {
         });
 
 
-        const unsubResignVoteStarted = api.on.resignVoteStarted?.((data: any) => {
+        const unsubResignVoteStarted = api.on.resignVoteStarted?.((data) => {
             store.openResignVote(data.expiresAt, 1);
         });
-        const unsubResignVoteUpdated = api.on.resignVoteUpdated?.((data: any) => {
+        const unsubResignVoteUpdated = api.on.resignVoteUpdated?.((data) => {
             store.updateResignVote(data.yesVotes, data.connectedTeamSize);
         });
-        const unsubNetworkReach = api.on.networkReach?.((data: any) => {
+        const unsubNetworkReach = api.on.networkReach?.((data) => {
             store.setReach(data);
         });
         const unsubResignVoteExpired = api.on.resignVoteExpired?.(() => {
@@ -231,7 +226,7 @@ export function useChessDemocracy(): void {
 
 /** Pulls the node's current state into the store. Call after connecting. */
 export async function hydrateFromNode(): Promise<void> {
-    const api   = ipc();
+    const api   = bridge();
     const store = useStore.getState();
     const [idRes, stateRes, peersRes, configRes] = await Promise.all([
         api.getIdentity(),
@@ -251,7 +246,7 @@ export async function hydrateFromNode(): Promise<void> {
  * message, or null on success.
  */
 export async function joinNetwork(network: NetworkKind, room?: string, visibility?: Visibility): Promise<string | null> {
-    const res = await ipc().connectNetwork(network, room, visibility);
+    const res = await bridge().connectNetwork(network, room, visibility);
     if (!res.ok) return res.error;
     await hydrateFromNode();
     useStore.getState().setNetwork(network, room ?? null, visibility ?? null);
@@ -260,13 +255,13 @@ export async function joinNetwork(network: NetworkKind, room?: string, visibilit
 
 /** The public games open to join right now. Takes a few seconds: it looks them up on the internet. */
 export async function browsePublicGames(): Promise<{ games: PublicGame[]; error: string | null }> {
-    const res = await ipc().browsePublicGames();
+    const res = await bridge().browsePublicGames();
     return res.ok ? { games: res.value, error: null } : { games: [], error: res.error };
 }
 
 /** Back to the network screen. Only works before Ready. */
 export async function leaveNetwork(): Promise<string | null> {
-    const res = await ipc().leaveNetwork();
+    const res = await bridge().leaveNetwork();
     if (!res.ok) return res.error;
     const store = useStore.getState();
     store.resetGame();

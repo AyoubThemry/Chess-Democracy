@@ -6,6 +6,7 @@
 
 import { Chessboard } from 'react-chessboard';
 import { useStore }   from '../store';
+import { bridge } from '../bridge';
 import './GameOverScreen.css';
 
 function resultLabel(winner: string | null, reason: string, myTeam: string | null): {
@@ -69,7 +70,7 @@ export default function GameOverScreen() {
                                       : 'result--loss';
 
     async function handlePlayAgain() {
-        await (window as any).chessDemocracy.resetGame();
+        await bridge().resetGame();
         resetGame();
     }
 

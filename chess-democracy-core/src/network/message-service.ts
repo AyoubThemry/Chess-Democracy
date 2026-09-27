@@ -69,6 +69,11 @@ interface InboundMessage {
     [key: string]: unknown;
 }
 
+/** A side as a peer sent it, or null for anything that isn't one. */
+function asTeam(value: unknown): Team | null {
+    return value === 'white' || value === 'black' ? value : null;
+}
+
 // Callbacks injected by Node so MessageService never imports Node directly
 export interface MessageCallbacks {
     setTimeOffset:    (offset: number) => void;
@@ -90,7 +95,7 @@ export interface MessageCallbacks {
 type OutboundMessage =
   | { type: 'game_start';      gameId: string; resolvedTeam: Team; startsAt: number; totalPlayers: number }
   | { type: 'game_over';       gameId: string; result: GameResult; lastFen: string; moveCount: number }
-  | { type: 'ready';           team: string }
+  | { type: 'ready';           team: Team }
   | { type: 'unready' }
   | { type: 'side_choice';     team: Team; request_id: string; client_time: number }
   | { type: 'config_proposal'; config: GameConfig; version: number }
@@ -259,7 +264,7 @@ export class MessageService {
 
             if (message.type === "ready") {
                 peer.ready = true;
-                peer.team  = message.team ?? null;
+                peer.team  = asTeam(message.team);
                 logger.info(`Peer ready`, { peer: senderPublicKey.slice(0, 8), team: peer.team });
                 callbacks.onReady(senderPublicKey);
                 return "ready";
@@ -273,9 +278,9 @@ export class MessageService {
             }
 
             if (message.type === "side_choice") {
-                peer.team = message.team ?? null;
+                peer.team = asTeam(message.team);
                 logger.info(`Peer has picked a team`, { peer: senderPublicKey.slice(0, 8), team: peer.team });
-                if (peer.team) callbacks.onSideChoice(senderPublicKey, peer.team as Team);
+                if (peer.team) callbacks.onSideChoice(senderPublicKey, peer.team);
                 return "side_choice";
             }
             

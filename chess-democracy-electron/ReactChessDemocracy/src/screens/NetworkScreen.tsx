@@ -14,6 +14,7 @@ import { useEffect, useState } from 'react';
 import { joinNetwork, browsePublicGames } from '../useChessDemocracy';
 import { newRoomCode, normalizeRoomCode } from '../roomCode';
 import type { NetworkKind, NetworkOption, PublicGame, Visibility } from '../ipc-types';
+import { ipc, bridge } from '../bridge';
 import './BootScreen.css';
 import './NetworkScreen.css';
 
@@ -35,11 +36,9 @@ export default function NetworkScreen() {
     const [browsing, setBrowsing] = useState(false);
     const [browseError, setBrowseError] = useState<string | null>(null);
 
-    const api = () => (window as any).chessDemocracy;
-
     useEffect(() => {
         // Missing when the renderer runs in a plain browser during development.
-        api()?.getNetworkOptions().then((res: any) => { if (res.ok) setOptions(res.value); });
+        ipc()?.getNetworkOptions().then(res => { if (res.ok) setOptions(res.value); });
     }, []);
 
     async function refresh() {
@@ -202,7 +201,7 @@ export default function NetworkScreen() {
                 </div>
             )}
 
-            <button className="network-switch-identity" onClick={() => api().logout()}>
+            <button className="network-switch-identity" onClick={() => bridge().logout()}>
                 Use a different identity
             </button>
         </div>

@@ -5,7 +5,7 @@ import type { Duplex } from 'stream';
 import { PeerMessaging } from '../peer-messaging.js';
 import { MessageService, NonceStore, type MessageCallbacks } from '../message-service.js';
 import { Peer, PeerStatus } from '../peer.js';
-import type { GameNetwork, NetworkContext, NetworkFactory, GameSummary } from '../game-network.js';
+import type { GameNetwork, NetworkContext, NetworkFactory, GameSummary, RoomReach } from '../game-network.js';
 import { LobbyAdvertiser } from './lobby.js';
 import { HyperswarmConnection } from './hyperswarm-connection.js';
 import { signMessage, verifySignature } from '../../protocol/verifysignsignature.js';
@@ -28,13 +28,6 @@ const DISCOVERY = {
     STUCK_MS:        20_000,   // found but not reached for this long: probably a NAT that won't open
 };
 
-/** Players found in the room, and how many of them we're actually connected to. */
-export interface RoomReach {
-    found:     number;
-    connected: number;
-    /** Someone was found but hasn't been reached for a while. */
-    stuck:     boolean;
-}
 
 /** Players find each other by joining the same topic: a hash of the room code. */
 export function roomTopic(room: string): Buffer {
