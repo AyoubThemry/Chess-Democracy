@@ -211,11 +211,15 @@ export class HyperswarmNetwork extends PeerMessaging implements GameNetwork {
      * announced, finds nobody, and hyperswarm wouldn't look again for minutes.
      * The same gap leaves two late joiners connected to the host but not to
      * each other, and every player has to reach every other.
+     *
+     * The refresh has to keep us a server. Passing server: false switches
+     * hyperswarm to lookups only, so we stopped announcing ourselves a few
+     * seconds after joining and anyone arriving later couldn't find us.
      */
     private scheduleLookup(): void {
         const alone = this.getAllPeers().size === 0;
         this.lookupTimer = setTimeout(() => {
-            this.discovery?.refresh({ client: true, server: false }).catch(() => {});
+            this.discovery?.refresh({ client: true, server: true }).catch(() => {});
             this.scheduleLookup();
         }, alone ? DISCOVERY.LOOKUP_ALONE_MS : DISCOVERY.LOOKUP_MS);
         this.lookupTimer.unref();
