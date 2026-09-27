@@ -22,14 +22,23 @@ jobs:
       - name: Build core
         run: npm run build --prefix chess-democracy-core
 
+      - name: Typecheck core, tests included
+        run: npm run typecheck --prefix chess-democracy-core
+
       - name: Test core
         run: npm test --prefix chess-democracy-core
+
+      - name: Integration tests
+        run: npm run test:integration --prefix chess-democracy-core
 
       - name: Install renderer
         run: npm ci --prefix chess-democracy-electron/ReactChessDemocracy
 
       - name: Test renderer
         run: npm test --prefix chess-democracy-electron/ReactChessDemocracy
+
+      - name: Typecheck and build renderer
+        run: npm run build --prefix chess-democracy-electron/ReactChessDemocracy
 
       - name: Install electron shell
         run: npm ci --prefix chess-democracy-electron
