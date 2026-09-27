@@ -2,7 +2,7 @@ import { EventEmitter }     from 'events';
 import { randomUUID }       from 'crypto';
 import { MessageService }   from './message-service.js';
 import type { Peer }        from './peer.js';
-import type { Team }        from '../game/game-state.js';
+import type { Team, GameResult } from '../game/game-state.js';
 import type { GameConfig, SignedVote } from '../game/voting-state.js';
 import type { TallyClaim }  from '../game/verify-tally.js';
 import type { GameSnapshot } from '../game/snapshot.js';
@@ -20,6 +20,25 @@ export abstract class PeerMessaging extends EventEmitter {
     protected abstract readonly getAllPeers: () => Map<string, Peer>;
 
     // ── Game coordination ─────────────────────────────────────────────────
+
+    /** The master's announcement: the game id and when it starts. */
+    public broadcastGameStart(gameId: string, resolvedTeam: Team, startsAt: number, totalPlayers: number): void {
+        MessageService.broadcast(
+            { type: 'game_start', gameId, resolvedTeam, startsAt, totalPlayers },
+            this.getAllPeers(),
+            this.identity,
+        );
+        logger.info(`Broadcast game_start`, { gameId: gameId.slice(0, 8), startsAt: new Date(startsAt).toISOString() });
+    }
+
+    public broadcastGameOver(gameId: string, result: GameResult, lastFen: string, moveCount: number): void {
+        MessageService.broadcast(
+            { type: 'game_over', gameId, result, lastFen, moveCount },
+            this.getAllPeers(),
+            this.identity,
+        );
+        logger.info(`Broadcast game_over`, { gameId: gameId.slice(0, 8), winner: result.winner, reason: result.reason });
+    }
 
     public broadcastReady(team: string): void {
         MessageService.broadcast(

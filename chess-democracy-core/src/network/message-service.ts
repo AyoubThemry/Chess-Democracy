@@ -88,6 +88,8 @@ export interface MessageCallbacks {
 }
 
 type OutboundMessage =
+  | { type: 'game_start';      gameId: string; resolvedTeam: Team; startsAt: number; totalPlayers: number }
+  | { type: 'game_over';       gameId: string; result: GameResult; lastFen: string; moveCount: number }
   | { type: 'ready';           team: string }
   | { type: 'unready' }
   | { type: 'side_choice';     team: Team; request_id: string; client_time: number }
