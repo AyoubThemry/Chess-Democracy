@@ -80,7 +80,7 @@ describe('Two-node integration', () => {
         const peerJoinedOnA = waitForEvent(nodeA, 'peer:joined');
         const peerJoinedOnB = waitForEvent(nodeB, 'peer:joined');
 
-        await nodeB.network!.connectTo({
+        await nodeB.network!.connectTo!({
             ip:               '127.0.0.1',
             port:             nodeA.boundPort,
             peerPublicNodeId: nodeA.identity.publicKey,

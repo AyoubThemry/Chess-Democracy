@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { ConnectorService, hostForUrl } from '../network/localnetwork/connector-service.js';
 import { getOrCreateIdentity } from '../protocol/generateidentity.js';
 import { signMessage } from '../protocol/verifysignsignature.js';

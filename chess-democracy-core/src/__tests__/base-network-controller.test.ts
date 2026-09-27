@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { EventEmitter } from 'events';
 import { BaseNetworkController } from '../network/base-network-controller.js';
 import { Peer, PeerData, PeerStatus } from '../network/peer.js';
@@ -8,6 +8,7 @@ import { getOrCreateIdentity } from '../protocol/generateidentity.js';
 import { signMessage } from '../protocol/verifysignsignature.js';
 import { NETWORK_CONFIG } from '../utils/config.js';
 import { WebSocket } from 'ws';
+import { fakeCallbacks } from './helpers/fake-callbacks.js';
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
@@ -49,13 +50,7 @@ class TestController extends BaseNetworkController {
     start() {}
     stop()  { this.stopBase(); }
     getPeers() { return peers; }
-    getMessageCallbacks() {
-        return {
-            setTimeOffset: (_n: number) => {},
-            onGameStart:   (_m: any, _k: string) => {},
-            onGameOver:    (_m: any, _k: string) => {},
-        };
-    }
+    getMessageCallbacks() { return fakeCallbacks(); }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

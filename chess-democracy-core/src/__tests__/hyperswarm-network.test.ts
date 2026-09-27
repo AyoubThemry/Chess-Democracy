@@ -3,7 +3,8 @@ import { duplexPair, type Duplex } from 'stream';
 import { randomUUID } from 'crypto';
 import { HyperswarmNetwork, roomTopic } from '../network/globalnetwork/hyperswarm-network.js';
 import { HyperswarmConnection } from '../network/globalnetwork/hyperswarm-connection.js';
-import { MessageService, type MessageCallbacks } from '../network/message-service.js';
+import { MessageService } from '../network/message-service.js';
+import { fakeCallbacks } from './helpers/fake-callbacks.js';
 import type { Peer } from '../network/peer.js';
 import { getOrCreateIdentity } from '../protocol/generateidentity.js';
 import { signMessage } from '../protocol/verifysignsignature.js';
@@ -20,18 +21,12 @@ async function until(check: () => boolean, ms = 2000): Promise<void> {
     }
 }
 
-function callbacks(): MessageCallbacks {
-    const names = ['setTimeOffset', 'onGameStart', 'onGameOver', 'onSideChoice', 'onReady', 'onUnready',
-        'onConfigProposal', 'onConfigAccept', 'onVote', 'onTallyResult', 'onGameSnapshot', 'onDrawOffer',
-        'onDrawResponse', 'onResignVote'];
-    return Object.fromEntries(names.map(n => [n, vi.fn()])) as unknown as MessageCallbacks;
-}
 
 /** A network plus the bookkeeping Node would do on its events. */
 function makeNode(room = 'test-room') {
     const identity = getOrCreateIdentity();
     const peers    = new Map<string, Peer>();
-    const cb       = callbacks();
+    const cb       = fakeCallbacks();
     const net      = new HyperswarmNetwork({
         identity, callbacks: cb, getAllPeers: () => peers,
         getAlivePeersCount: () => peers.size, acceptingConnection: () => true,

@@ -5,6 +5,7 @@ import { Peer, PeerData }         from '../network/peer.js';
 import { WebSocketConnection } from '../network/peer-connection.js';
 import { getOrCreateIdentity }    from '../protocol/generateidentity.js';
 import { EventEmitter }           from 'events';
+import { fakeCallbacks }          from './helpers/fake-callbacks.js';
 import { WebSocket }              from 'ws';
 
 // ── Stub heavy external deps ──────────────────────────────────────────────────
@@ -54,11 +55,7 @@ function makeController(peers: Map<string, Peer> = new Map(), accepting = true) 
         () => peers.size,
         () => peers,
         () => accepting,
-        {
-            setTimeOffset: vi.fn(),
-            onGameStart:   vi.fn(),
-            onGameOver:    vi.fn(),
-        },
+        fakeCallbacks(),
     );
     return { ctrl, listener };
 }
@@ -106,7 +103,7 @@ describe('LocalNetworkController — getMessageCallbacks', () => {
         const ctrl     = new LocalNetworkController(
             'test', listener, identity, 9000,
             () => 0, () => new Map(), () => true,
-            { setTimeOffset, onGameStart, onGameOver },
+            fakeCallbacks({ setTimeOffset, onGameStart, onGameOver }),
         );
         const cbs = ctrl.getMessageCallbacks();
         cbs.setTimeOffset(42);

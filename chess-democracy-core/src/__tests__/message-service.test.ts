@@ -6,6 +6,7 @@ import { getOrCreateIdentity }        from '../protocol/generateidentity.js';
 import { signMessage, verifySignature } from '../protocol/verifysignsignature.js';
 import { randomUUID }                 from 'crypto';
 import { WebSocket }                  from 'ws';
+import { fakeCallbacks }              from './helpers/fake-callbacks.js';
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
@@ -32,20 +33,7 @@ function buildSignedMessage(payload: Record<string, unknown>, privKey: string) {
 
 // ─────────────────────────────────────────────────────────────────────────────
 
-function makeCallbacks(overrides: Record<string, unknown> = {}) {
-    return {
-        setTimeOffset:    vi.fn(),
-        onGameStart:      vi.fn(),
-        onGameOver:       vi.fn(),
-        onSideChoice:     vi.fn(),
-        onReady:          vi.fn(),
-        onUnready:        vi.fn(),
-        onConfigProposal: vi.fn(),
-        onConfigAccept:   vi.fn(),
-        onVote:           vi.fn(),
-        ...overrides,
-    };
-}
+const makeCallbacks = fakeCallbacks;
 
 describe('MessageService.HandleMessage', () => {
     const sender   = getOrCreateIdentity();
@@ -102,7 +90,8 @@ describe('MessageService.HandleMessage', () => {
         const sig     = signMessage(JSON.stringify(payload), sender.privateKey);
 
         const cbs  = makeCallbacks({ setTimeOffset: noop });
-        const args = [payload, sig, sender.publicKey, peers, receiver.publicKey, receiver.privateKey, cbs] as const;
+        const args: Parameters<typeof MessageService.HandleMessage> =
+            [payload, sig, sender.publicKey, peers, receiver.publicKey, receiver.privateKey, cbs];
 
         // First call — OK
         MessageService.HandleMessage(...args);
@@ -279,7 +268,7 @@ describe('MessageService.broadcast', () => {
         const synchronized = 1_700_000_000_000;
 
         MessageService.broadcast(
-            { type: 'vote', turnIndex: 3, move: 'e2e4', timestamp: synchronized },
+            { type: 'vote', turnIndex: 3, round: 0, move: 'e2e4', timestamp: synchronized },
             peers, me,
         );
 
