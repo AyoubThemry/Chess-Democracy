@@ -1,7 +1,7 @@
 {
   "name": "chess-democracy-renderer",
   "private": true,
-  "version": "0.2.0-beta.2",
+  "version": "0.2.0-beta.3",
   "type": "module",
   "scripts": {
     "dev": "vite",
