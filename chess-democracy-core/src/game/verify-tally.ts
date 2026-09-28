@@ -10,6 +10,12 @@ export interface TallyClaim {
     outcome:   TallyResult['outcome'];
     move:      string | null;
     votes:     SignedVote[];
+    /**
+     * Set when the master counted before the window closed because everyone
+     * had voted. The next window starts from this moment instead of from the
+     * scheduled close, on every node. Older versions leave it out.
+     */
+    decidedAt?: number;
 }
 
 /** What the checking node knows about the game right now. */
