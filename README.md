@@ -10,7 +10,7 @@ A peer-to-peer multiplayer chess client built with Electron + React + TypeScript
 
 Open the app and pick where to play. **Local network**: machines on the same Wi-Fi find each other with no setup. **Over the internet**: start a public game that anyone can find in the list, or a private one and send friends the room code. No accounts either way.
 
-Pick a side. Any number of players can join the same one. When it is your side's turn a voting window opens (30s by default) and everyone on that side votes for a legal move. The plurality winner is played. A two-way tie breaks deterministically so every node commits the same move; a three-way split with no majority reopens the window.
+Pick a side. Any number of players can join the same one. When it is your side's turn a voting window opens (30s by default) and everyone on that side votes for a legal move. It closes as soon as everyone has voted, so nobody waits out the clock. A move with a majority is played. A two-way tie breaks deterministically so every node commits the same move; any other split reopens the window.
 
 Resigning works the same way. No single player can give up the game on their own: enough of your connected teammates have to agree first.
 
@@ -51,7 +51,9 @@ Each player has an Ed25519 keypair stored as a PEM file (`~/.chess-democracy/ide
 
 ### Voting protocol
 
-When it is a side's turn, a configurable voting window opens (default 30 s, set in lobby via Config panel). Each player on that side casts a vote for a legal move. The plurality winner is committed. On a 3-way split with no majority the window restarts; after `maxRevotes` failed rounds the game ends with `revotes_exhausted`.
+When it is a side's turn, a configurable voting window opens (default 30 s, set in lobby via Config panel). Each player on that side casts a vote for a legal move. A move with more than half the votes is committed; an exact two-way tie goes to the alphabetically first move, so every node picks the same one. Any other split restarts the window, and after `maxRevotes` failed rounds the game ends with `revotes_exhausted`.
+
+The window closes early once every connected player on the side to move has voted: the master counts right away and publishes when it decided, and every node starts the next window from that moment. Players who dropped out aren't waited for, just as when the window runs out without them.
 
 ### Who counts the votes
 

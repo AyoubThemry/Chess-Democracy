@@ -161,12 +161,25 @@ describe('Two-node integration', () => {
         voteWindowB = wB;
     }, 25_000);
 
+    // Set up before white votes: white is the only player on its side, so
+    // once it has voted the master counts straight away instead of waiting
+    // out the 30-second window.
+    let tallies:     Promise<unknown[]>;
+    let nextWindows: Promise<unknown[]>;
+    let verified:    ReturnType<typeof vi.spyOn>;
+    let votedAt = 0;
+
     it('white casts e2e4 and the other node receives it', async () => {
         const whiteNode = nodeA.chosenTeam === 'white' ? nodeA : nodeB;
         const otherNode = whiteNode === nodeA ? nodeB : nodeA;
+        const nonMaster = nodeA.identity.publicKey < nodeB.identity.publicKey ? nodeB : nodeA;
 
         const voteOnOther = waitForEvent(otherNode, 'vote:received', 6_000);
+        tallies     = Promise.all([waitForEvent(nodeA, 'tally:done', 10_000), waitForEvent(nodeB, 'tally:done', 10_000)]);
+        nextWindows = Promise.all([waitForEvent(nodeA, 'vote:window_opened', 10_000), waitForEvent(nodeB, 'vote:window_opened', 10_000)]);
+        verified    = vi.spyOn(nonMaster as any, 'handleTallyResult');
 
+        votedAt = Date.now();
         const result = whiteNode.castVote('e2e4');
         expect(result).toBe('ok');
 
@@ -175,28 +188,32 @@ describe('Two-node integration', () => {
         expect(ev.peerId).toBe(whiteNode.identity.publicKey);
     }, 8_000);
 
-    it('the master counts, the other node verifies, both apply the same move', async () => {
+    it('the master counts as soon as everyone has voted, the other node verifies, both apply the same move', async () => {
         // Lowest public key is the master. The other node must not count on its
         // own; it has to receive the master's signed result and check it.
         const [masterNode, otherNode] =
             nodeA.identity.publicKey < nodeB.identity.publicKey ? [nodeA, nodeB] : [nodeB, nodeA];
-        const verified = vi.spyOn(otherNode as any, 'handleTallyResult');
 
-        const tallyOnA = waitForEvent(nodeA, 'tally:done', 40_000);
-        const tallyOnB = waitForEvent(nodeB, 'tally:done', 40_000);
-
-        const [tA, tB] = await Promise.all([tallyOnA, tallyOnB]) as any[];
+        const [tA, tB] = await tallies as any[];
+        expect(Date.now() - votedAt).toBeLessThan(5_000);   // not at the end of the window
         expect(tA.move).toBe('e2e4');
         expect(tB.move).toBe('e2e4');
         expect(tA.fen).toBe(tB.fen);
         expect(tA.turnIndex).toBe(0);
 
         expect(verified).toHaveBeenCalledWith(masterNode.identity.publicKey, expect.objectContaining({
-            move:  'e2e4',
-            votes: [expect.objectContaining({ payload: expect.objectContaining({ move: 'e2e4' }) })],
+            move:      'e2e4',
+            votes:     [expect.objectContaining({ payload: expect.objectContaining({ move: 'e2e4' }) })],
+            decidedAt: expect.any(Number),
         }));
         expect(otherNode.gameState.phase).toBe('in_progress');   // not stopped as out of sync
         expect(masterNode.gameState.phase).toBe('in_progress');
-    }, 45_000);
+
+        // Black's window starts from the moment the vote was decided, the same on both.
+        const [wA, wB] = await nextWindows as any[];
+        expect(wA.turnIndex).toBe(1);
+        expect(wA.windowCloseAt).toBe(wB.windowCloseAt);
+        expect(wA.windowCloseAt - Date.now()).toBeGreaterThan(nodeA.gameConfig.voteWindowMs - 5_000);
+    }, 15_000);
 
 });

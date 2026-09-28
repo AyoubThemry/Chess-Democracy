@@ -167,6 +167,7 @@ export class Node extends EventEmitter {
         });
 
         logger.info(`Vote cast`, { move: uciMove, turn: this._voting.turnIndex });
+        this.countIfEveryoneVoted();
         return 'ok';
     }
 
@@ -337,6 +338,7 @@ export class Node extends EventEmitter {
         if (result === 'ok') {
             logger.info(`Peer vote recorded`, { peer: senderKey.slice(0, 8), move, turnIndex });
             this.emit('vote:received', { peerId: senderKey, turnIndex, move });
+            this.countIfEveryoneVoted();
         } else {
             logger.warn(`Peer vote rejected`, { peer: senderKey.slice(0, 8), reason: result });
         }
@@ -570,7 +572,30 @@ export class Node extends EventEmitter {
         this._voteTimer = setTimeout(() => this.onTallyDue(), VOTE_CONFIG.TALLY_WAIT_MS);
     }
 
-    private countAndPublish(): void {
+    /**
+     * Everyone connected on the side to move has voted, so there's nothing to
+     * wait for: as master, count now instead of at the end of the window.
+     * Players who dropped out aren't waited for, the same as when the window
+     * runs out without them.
+     */
+    private countIfEveryoneVoted(): void {
+        const voting = this._voting;
+        if (!voting || this.game.phase !== 'in_progress') return;
+        if (Date.now() < this._resyncGraceUntil) return;   // a returning player may still have votes to bring
+        if (!this.hasQuorum() || this.masterKey() !== this.identity.publicKey) return;
+
+        const side   = this.game.currentTurn;
+        const voters = this.roster.playing(this.connected()).filter(key => this.teamOf(key) === side);
+        if (voters.length === 0 || !voters.every(key => voting.votes.has(key))) return;
+
+        clearTimeout(this._voteTimer);
+        this._voteTimer = undefined;
+        logger.info(`Everyone on the side to move has voted, counting now`, { turnIndex: voting.turnIndex });
+        this.countAndPublish(this.getSynchronizedTime());
+    }
+
+    /** `decidedAt` is set when counting early: the next window starts from then. */
+    private countAndPublish(decidedAt?: number): void {
         const voting = this._voting!;
         const votes  = voting.signedVotes();
         // Count exactly the list we publish, so everyone recounts the same thing.
@@ -583,6 +608,7 @@ export class Node extends EventEmitter {
             outcome:   result.outcome,
             move:      result.outcome === 'winner' ? result.move : null,
             votes,
+            ...(decidedAt !== undefined && { decidedAt }),
         });
         logger.info(`Tally published`, {
             turnIndex: voting.turnIndex,
@@ -591,7 +617,7 @@ export class Node extends EventEmitter {
             votes:     votes.length,
         });
 
-        this.applyTally(result);
+        this.applyTally(result, decidedAt);
     }
 
     private handleTallyResult(senderKey: string, claim: TallyClaim): void {
@@ -621,7 +647,21 @@ export class Node extends EventEmitter {
 
         clearTimeout(this._voteTimer);
         this._voteTimer = undefined;
-        this.applyTally(verdict.result);
+        this.applyTally(verdict.result, this.earlyDecision(claim.decidedAt));
+    }
+
+    /**
+     * The moment the master says it counted early, if it's believable: inside
+     * the window being counted. Anything else and the next window starts
+     * where it always did, at the scheduled close.
+     */
+    private earlyDecision(decidedAt: unknown): number | undefined {
+        const voting = this._voting;
+        if (!voting || typeof decidedAt !== 'number' || !Number.isFinite(decidedAt)) return undefined;
+        const opened = voting.windowCloseAt - this.gameConfig.voteWindowMs;
+        return decidedAt >= opened && decidedAt < voting.windowCloseAt + VOTE_CONFIG.VOTE_GRACE_MS
+            ? decidedAt
+            : undefined;
     }
 
     // Resync
@@ -704,6 +744,7 @@ export class Node extends EventEmitter {
                 });
             }
         }
+        this.countIfEveryoneVoted();
     }
 
     /** Plays one move from a snapshot as a tally would. False once the game has stopped. */
@@ -785,7 +826,8 @@ export class Node extends EventEmitter {
         this.emit('game:over', over);
     }
 
-    private applyTally(result: TallyResult): void {
+    /** `decidedAt`: the vote was settled early, and the next window starts from then. */
+    private applyTally(result: TallyResult, decidedAt?: number): void {
         if (!this._voting) return;
 
         const voting = this._voting;
@@ -797,7 +839,7 @@ export class Node extends EventEmitter {
         });
 
         if (result.outcome === 'no_votes' || result.outcome === 'no_majority') {
-            this.maybeRevote();
+            this.maybeRevote(decidedAt);
             return;
         }
 
@@ -816,7 +858,7 @@ export class Node extends EventEmitter {
         const applyResult = this.game.applyMove(recorded, appliedByTeam);
         if (applyResult !== 'ok') {
             logger.error(`Tally winner rejected by engine`, { move, reason: applyResult });
-            this.maybeRevote();
+            this.maybeRevote(decidedAt);
             return;
         }
 
@@ -848,11 +890,11 @@ export class Node extends EventEmitter {
         }
 
         // Open next window anchored to previous window end (deterministic across nodes)
-        const nextWindowStart = prevWindowCloseAt + VOTE_CONFIG.VOTE_GRACE_MS;
+        const nextWindowStart = decidedAt ?? prevWindowCloseAt + VOTE_CONFIG.VOTE_GRACE_MS;
         this.openVotingWindow(voting.turnIndex + 1, nextWindowStart);
     }
 
-    private maybeRevote(): void {
+    private maybeRevote(decidedAt?: number): void {
         if (!this._voting) return;
 
         if (this._voting.revoteCount >= this.gameConfig.maxRevotes) {
@@ -861,8 +903,8 @@ export class Node extends EventEmitter {
             return;
         }
 
-        const prevWindowCloseAt = this._voting.windowCloseAt;
-        const newWindowCloseAt  = prevWindowCloseAt + VOTE_CONFIG.VOTE_GRACE_MS + this.gameConfig.voteWindowMs;
+        const revoteStart      = decidedAt ?? this._voting.windowCloseAt + VOTE_CONFIG.VOTE_GRACE_MS;
+        const newWindowCloseAt = revoteStart + this.gameConfig.voteWindowMs;
         this._voting.openRevote(newWindowCloseAt);
 
         const delay = Math.max(0, newWindowCloseAt + VOTE_CONFIG.VOTE_GRACE_MS - this.getSynchronizedTime());
@@ -1242,7 +1284,9 @@ export class Node extends EventEmitter {
             total: this.state.alivePeersCount,
         });
 
-        // A disconnecting teammate shrinks the denominator — may push vote over threshold
+        // One fewer player: that may be enough for a resign vote to pass, or
+        // for everyone left on the side to move to have voted.
         this.checkResignThreshold();
+        this.countIfEveryoneVoted();
     }
 }
