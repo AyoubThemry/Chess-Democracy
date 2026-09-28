@@ -547,8 +547,9 @@ export class Node extends EventEmitter {
         this.emit('vote:window_opened', {
             turnIndex,
             windowCloseAt,
-            voteWindowMs: this.gameConfig.voteWindowMs,
-            isMyTurn:     this.game.isMyTurn,
+            voteWindowMs:  this.gameConfig.voteWindowMs,
+            isMyTurn:      this.game.isMyTurn,
+            clockOffsetMs: this.state.timeOffset,
         });
     }
 
@@ -932,6 +933,7 @@ export class Node extends EventEmitter {
             revoteCount:   this._voting.revoteCount,
             windowCloseAt: newWindowCloseAt,
             voteWindowMs:  this.gameConfig.voteWindowMs,
+            clockOffsetMs: this.state.timeOffset,
         });
     }
 

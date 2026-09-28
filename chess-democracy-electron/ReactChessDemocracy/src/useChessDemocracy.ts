@@ -6,6 +6,15 @@ import { useStore } from './store';
 import { ipc, bridge } from './bridge';
 import type { NetworkKind, Visibility, PublicGame } from './ipc-types';
 
+/**
+ * A time on the game clock as a time on this computer's clock. The node keeps
+ * its clock in step with the game's master, which can be seconds off from
+ * this computer's, so a countdown against Date.now() needs this.
+ */
+export function onThisClock(gameTime: number, clockOffsetMs = 0): number {
+    return gameTime - clockOffsetMs;
+}
+
 export function useChessDemocracy(): void {
     const countdownId = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -133,7 +142,7 @@ export function useChessDemocracy(): void {
 
 
         const unsubVoteWindowOpened = api.on.voteWindowOpened((data) => {
-            store.openVotingWindow(data.turnIndex, data.windowCloseAt, data.voteWindowMs, data.isMyTurn);
+            store.openVotingWindow(data.turnIndex, onThisClock(data.windowCloseAt, data.clockOffsetMs), data.voteWindowMs, data.isMyTurn);
         });
 
         const unsubVoteReceived = api.on.voteReceived((data) => {
@@ -154,7 +163,7 @@ export function useChessDemocracy(): void {
         });
 
         const unsubRevoteStarted = api.on.revoteStarted((data) => {
-            store.applyRevote(data.turnIndex, data.windowCloseAt, data.voteWindowMs, data.revoteCount);
+            store.applyRevote(data.turnIndex, onThisClock(data.windowCloseAt, data.clockOffsetMs), data.voteWindowMs, data.revoteCount);
         });
 
         const unsubGameReset = api.on.gameReset(() => {
