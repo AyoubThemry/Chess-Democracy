@@ -17,7 +17,7 @@ export const GAME_CONFIG = {
     READY_CHECK_INTERVAL_MS:  2_000,  // how often to poll peer ready status
     READY_TIMEOUT_MS:        30_000,  // abort if not all peers ready within this
     GAME_START_COUNTDOWN_MS: 10_000,  // countdown from all-ready to game-begin
-    MOVE_TIMEOUT_MS:        120_000,  // 2 min hard cap per turn, spanning any revotes
+    MOVE_TIMEOUT_EXTRA_MS:   10_000,  // on top of every round of a turn: time for the last result to arrive
     MOVE_TIMEOUT_SLACK_MS:    5_000,  // how early a peer's timeout claim may arrive (clock drift)
     RESYNC_GRACE_MS:          2_000,  // after a player reconnects, wait this long before counting votes
 } as const;

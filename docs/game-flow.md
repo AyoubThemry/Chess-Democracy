@@ -63,4 +63,4 @@ sequenceDiagram
 | `disconnect` | Peer disconnect detected mid-game |
 | `draw_agreement` | Both sides accept a draw offer |
 | `revotes_exhausted` | No plurality after maxRevotes re-vote rounds |
-| `timeout` | No vote cast before MOVE_TIMEOUT_MS (120 s hard cap) |
+| `timeout` | No move committed within the turn's time limit: every vote round the settings allow, plus 10 s (132 s with the defaults) |

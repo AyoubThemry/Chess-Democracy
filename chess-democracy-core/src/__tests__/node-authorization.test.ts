@@ -115,7 +115,7 @@ describe('Node rejects messages from peers who may not send them', () => {
     });
 
     it('accepts a timeout once the turn has really run out', () => {
-        (node as unknown as { _moveTimeoutStartedAt: number })._moveTimeoutStartedAt = Date.now() - 121_000;
+        (node as unknown as { _moveTimeoutStartedAt: number })._moveTimeoutStartedAt = Date.now() - node.moveTimeoutMs - 1_000;
         gameOver('black-opponent', 'game-1', null, 'timeout');
         expect(phase()).toBe('finished');
     });
