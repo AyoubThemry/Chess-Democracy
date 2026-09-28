@@ -105,6 +105,18 @@ export class Node extends EventEmitter {
     get peerAcceptedVersions():      Map<string, number>{ return this.configHandshake.peerAcceptedVersions; }
     get activeVoting():              VotingState | null { return this._voting; }
 
+    /**
+     * How long one turn may take before the game ends as a timeout: every
+     * round it's allowed (the first window and each revote), plus time for
+     * the last result to arrive. It follows the settings, so a long window or
+     * many revotes are never cut off, and every player works out the same
+     * limit from the settings they all accepted.
+     */
+    get moveTimeoutMs(): number {
+        const { voteWindowMs, maxRevotes } = this.gameConfig;
+        return (maxRevotes + 1) * (voteWindowMs + VOTE_CONFIG.VOTE_GRACE_MS) + GAME_CONFIG.MOVE_TIMEOUT_EXTRA_MS;
+    }
+
     // Public API
 
     public setTeam(team: Team): boolean {
@@ -517,14 +529,14 @@ export class Node extends EventEmitter {
         const delay     = Math.max(0, tallyTime - this.getSynchronizedTime());
         this._voteTimer = setTimeout(() => this.onTallyDue(), delay);
 
-        // Per-turn timeout: if no move is committed within MOVE_TIMEOUT_MS, end the game.
+        // Per-turn timeout: if no move is committed in time, end the game.
         clearTimeout(this._moveTimeoutTimer);
         this._moveTimeoutStartedAt = this.getSynchronizedTime();
         this._moveTimeoutTimer = setTimeout(() => {
             if (this.game.phase !== 'in_progress') return;
             logger.warn(`Move timeout on turn ${turnIndex} — ending game`);
             this.endGame({ result: { winner: null, reason: 'timeout' }, announce: true });
-        }, GAME_CONFIG.MOVE_TIMEOUT_MS);
+        }, this.moveTimeoutMs);
 
         logger.info(`Vote window opened`, {
             turnIndex,
@@ -1026,7 +1038,7 @@ export class Node extends EventEmitter {
                 // Every node runs the same per-turn timer, so ours should be
                 // about to fire too. Otherwise the claim is early.
                 const elapsed = this.getSynchronizedTime() - this._moveTimeoutStartedAt;
-                return elapsed >= GAME_CONFIG.MOVE_TIMEOUT_MS - GAME_CONFIG.MOVE_TIMEOUT_SLACK_MS
+                return elapsed >= this.moveTimeoutMs - GAME_CONFIG.MOVE_TIMEOUT_SLACK_MS
                     ? null
                     : 'timeout_too_early';
             }

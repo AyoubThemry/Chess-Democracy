@@ -90,7 +90,7 @@ Snapshot moves are checked for legality but not re-proven with the votes that ch
 
 ### Move timeout
 
-Each voting window has a hard cap (`MOVE_TIMEOUT_MS`, default 120 s). If no tally fires before the cap, the game ends with reason `timeout`.
+Each turn has a time limit, worked out from the settings: every round it can take (the first window and each revote), plus 10 seconds for the last result to arrive. With the defaults, 30 s windows and 3 revotes, that's 132 s. If no move is committed within it, for example because too few players are connected to count the votes, the game ends with reason `timeout`. Every player computes the same limit from the settings they all accepted.
 
 ---
 
