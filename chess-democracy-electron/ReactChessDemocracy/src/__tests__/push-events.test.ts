@@ -40,6 +40,19 @@ describe('push events', () => {
         expect(useStore.getState().voting?.myVote).toBe('e2e4');
     });
 
+    it("counts down on this computer's clock, not the game's", () => {
+        const handlers = fakeBridge();
+        renderHook(() => useChessDemocracy());
+        const closeOnGameClock = Date.now() + 30_000;
+
+        // The game clock runs 5 s ahead of this computer's.
+        act(() => handlers.voteWindowOpened({ turnIndex: 0, windowCloseAt: closeOnGameClock, voteWindowMs: 30_000, isMyTurn: true, clockOffsetMs: 5_000 }));
+        expect(useStore.getState().voting?.windowCloseAt).toBe(closeOnGameClock - 5_000);
+
+        act(() => handlers.revoteStarted({ turnIndex: 0, revoteCount: 1, windowCloseAt: closeOnGameClock + 30_500, voteWindowMs: 30_000, clockOffsetMs: 5_000 }));
+        expect(useStore.getState().voting?.windowCloseAt).toBe(closeOnGameClock + 30_500 - 5_000);
+    });
+
     it("doesn't re-render the app for store changes it doesn't use", () => {
         fakeBridge();
         let renders = 0;

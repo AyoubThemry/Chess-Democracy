@@ -52,6 +52,7 @@ export interface ConfigState {
 
 export interface VotingState {
     turnIndex:     number;
+    /** When the window closes, on this computer's clock, so Date.now() can count down to it. */
     windowCloseAt: number;
     voteWindowMs:  number;
     isMyTurn:      boolean;

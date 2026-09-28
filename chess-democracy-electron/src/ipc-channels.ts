@@ -325,6 +325,8 @@ export interface PushMap {
         windowCloseAt: number;
         voteWindowMs: number;
         isMyTurn:     boolean;
+        /** windowCloseAt is on the game clock, which runs this far ahead of this computer's. */
+        clockOffsetMs: number;
     };
     [PUSH.VOTE_RECEIVED]: {
         peerId:    string;
@@ -347,6 +349,8 @@ export interface PushMap {
         revoteCount:   number;
         windowCloseAt: number;
         voteWindowMs:  number;
+        /** windowCloseAt is on the game clock, which runs this far ahead of this computer's. */
+        clockOffsetMs: number;
     };
     [PUSH.GAME_RESET]: Record<string, never>;
     [PUSH.DRAW_OFFERED]: {
